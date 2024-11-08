@@ -25,6 +25,7 @@ apply plugin: 'com.android.application'
 apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
 
 android {
+    namespace 'id.kakzaki.blue_thermal_printer_example'
     compileSdkVersion 34
 
     lintOptions {
