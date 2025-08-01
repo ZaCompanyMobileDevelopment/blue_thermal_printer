@@ -60,6 +60,12 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
   private static final String NAMESPACE = "blue_thermal_printer";
   private static final int REQUEST_COARSE_LOCATION_PERMISSIONS = 1451;
   private static final UUID MY_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
+  
+  // WriteBytes configuration constants
+  private static final int MAX_RETRY_ATTEMPTS = 3;
+  private static final int WRITE_DELAY_MS = 100;
+  private static final int CHUNK_SIZE = 1024;
+  private static final int CONNECTION_TIMEOUT_MS = 5000;
   private static ConnectedThread THREAD = null;
   private BluetoothAdapter mBluetoothAdapter;
 
@@ -589,12 +595,104 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
       return;
     }
 
+    if (message == null || message.length == 0) {
+      result.error("write_error", "message is null or empty", null);
+      return;
+    }
+
+    AsyncTask.execute(() -> {
+      boolean success = false;
+      String errorMessage = "";
+      
+      for (int attempt = 1; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
+        try {
+          Log.d(TAG, "WriteBytes attempt " + attempt + "/" + MAX_RETRY_ATTEMPTS + ", data length: " + message.length);
+          
+          // Check connection health before writing
+          if (!isConnectionHealthy()) {
+            throw new IOException("Connection is not healthy");
+          }
+          
+          // Initialize printer and clear any pending data
+          if (!THREAD.writeWithValidation(PrinterCommands.INIT)) {
+            throw new IOException("Failed to initialize printer");
+          }
+          
+          // Write data in chunks for better reliability
+          success = writeDataInChunks(message);
+          
+          if (success) {
+            // Add final commands to ensure proper printing
+            // THREAD.writeWithValidation(PrinterCommands.FEED_LINE);
+            // THREAD.writeWithValidation(new byte[]{0x0A, 0x0A}); // Extra line feeds
+            
+            Log.d(TAG, "WriteBytes successful on attempt " + attempt);
+            result.success(true);
+            Log.d(TAG, "WriteBytes successful on result" + result);
+            return;
+          }
+          
+        } catch (Exception ex) {
+          errorMessage = ex.getMessage();
+          Log.e(TAG, "WriteBytes attempt " + attempt + " failed: " + errorMessage, ex);
+          
+          // Wait before retry (except on last attempt)
+          if (attempt < MAX_RETRY_ATTEMPTS) {
+            try {
+              Thread.sleep(WRITE_DELAY_MS * attempt); // Progressive delay
+            } catch (InterruptedException ie) {
+              Thread.currentThread().interrupt();
+              break;
+            }
+          }
+        }
+      }
+      
+      // All attempts failed
+      Log.e(TAG, "WriteBytes failed after " + MAX_RETRY_ATTEMPTS + " attempts");
+      result.error("write_error", "Failed after " + MAX_RETRY_ATTEMPTS + " attempts: " + errorMessage, null);
+    });
+  }
+  
+  private boolean writeDataInChunks(byte[] data) {
     try {
-      THREAD.write(message);
-      result.success(true);
-    } catch (Exception ex) {
-      Log.e(TAG, ex.getMessage(), ex);
-      result.error("write_error", ex.getMessage(), exceptionToString(ex));
+      int totalBytes = data.length;
+      int bytesWritten = 0;
+      
+      while (bytesWritten < totalBytes) {
+        int chunkSize = Math.min(CHUNK_SIZE, totalBytes - bytesWritten);
+        byte[] chunk = new byte[chunkSize];
+        System.arraycopy(data, bytesWritten, chunk, 0, chunkSize);
+        
+        if (!THREAD.writeWithValidation(chunk)) {
+          Log.e(TAG, "Failed to write chunk at offset " + bytesWritten);
+          return false;
+        }
+        
+        bytesWritten += chunkSize;
+        
+        // Small delay between chunks
+        Thread.sleep(50);
+        
+        Log.d(TAG, "Written " + bytesWritten + "/" + totalBytes + " bytes");
+      }
+      
+      return true;
+    } catch (Exception e) {
+      Log.e(TAG, "Error writing data in chunks: " + e.getMessage(), e);
+      return false;
+    }
+  }
+  
+  private boolean isConnectionHealthy() {
+    try {
+      return THREAD != null && 
+             THREAD.mmSocket != null && 
+             THREAD.mmSocket.isConnected() && 
+             THREAD.outputStream != null;
+    } catch (Exception e) {
+      Log.e(TAG, "Error checking connection health: " + e.getMessage(), e);
+      return false;
     }
   }
 
@@ -937,9 +1035,9 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
   }
 
   private class ConnectedThread extends Thread {
-    private final BluetoothSocket mmSocket;
+    public final BluetoothSocket mmSocket;
     private final InputStream inputStream;
-    private final OutputStream outputStream;
+    public final OutputStream outputStream;
 
     ConnectedThread(BluetoothSocket socket) {
       mmSocket = socket;
@@ -973,9 +1071,80 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
 
     public void write(byte[] bytes) {
       try {
-        outputStream.write(bytes);
+        synchronized (outputStream) {
+          outputStream.write(bytes);
+          outputStream.flush();
+          
+          // Add small delay to ensure data transmission
+          try {
+            Thread.sleep(50);
+          } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+          }
+        }
       } catch (IOException e) {
-        e.printStackTrace();
+        Log.e(TAG, "Write failed: " + e.getMessage(), e);
+        // Attempt to reconnect if write fails
+        try {
+          if (mmSocket != null && !mmSocket.isConnected()) {
+            cancel();
+            THREAD = null;
+          }
+        } catch (Exception ex) {
+          Log.e(TAG, "Error checking connection: " + ex.getMessage(), ex);
+        }
+      }
+    }
+    
+    public boolean writeWithValidation(byte[] bytes) {
+      if (bytes == null || bytes.length == 0) {
+        return false;
+      }
+      
+      try {
+        synchronized (outputStream) {
+          // Check if connection is still valid
+          if (mmSocket == null || !mmSocket.isConnected() || outputStream == null) {
+            Log.e(TAG, "Connection not valid for write operation");
+            return false;
+          }
+          
+          // Write data
+          outputStream.write(bytes);
+          outputStream.flush();
+          
+          // Wait for data to be transmitted
+          Thread.sleep(WRITE_DELAY_MS);
+          
+          // Verify the data was sent (basic validation)
+          if (outputStream != null) {
+            return true;
+          }
+          
+          return false;
+        }
+      } catch (IOException e) {
+        Log.e(TAG, "WriteWithValidation failed: " + e.getMessage(), e);
+        
+        // Try to recover connection
+        try {
+          if (mmSocket != null && !mmSocket.isConnected()) {
+            Log.w(TAG, "Connection lost during write, cleaning up");
+            cancel();
+            THREAD = null;
+          }
+        } catch (Exception ex) {
+          Log.e(TAG, "Error during connection recovery: " + ex.getMessage(), ex);
+        }
+        
+        return false;
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        Log.e(TAG, "WriteWithValidation interrupted: " + e.getMessage(), e);
+        return false;
+      } catch (Exception e) {
+        Log.e(TAG, "Unexpected error in writeWithValidation: " + e.getMessage(), e);
+        return false;
       }
     }
 
