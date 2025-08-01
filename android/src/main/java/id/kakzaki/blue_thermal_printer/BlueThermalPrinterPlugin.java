@@ -61,11 +61,13 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
   private static final int REQUEST_COARSE_LOCATION_PERMISSIONS = 1451;
   private static final UUID MY_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
   
-  // WriteBytes configuration constants
+  // WriteBytes configuration constants - optimized for speed
   private static final int MAX_RETRY_ATTEMPTS = 3;
-  private static final int WRITE_DELAY_MS = 100;
-  private static final int CHUNK_SIZE = 1024;
+  private static final int WRITE_DELAY_MS = 30; // Reduced from 100ms to 30ms
+  private static final int CHUNK_SIZE = 2048; // Increased from 1024 to 2048 bytes
   private static final int CONNECTION_TIMEOUT_MS = 5000;
+  private static final int FAST_WRITE_DELAY_MS = 10; // For small chunks
+  private static final int CHUNK_DELAY_MS = 20; // Reduced delay between chunks
   private static ConnectedThread THREAD = null;
   private BluetoothAdapter mBluetoothAdapter;
 
@@ -628,7 +630,6 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
             
             Log.d(TAG, "WriteBytes successful on attempt " + attempt);
             result.success(true);
-            Log.d(TAG, "WriteBytes successful on result" + result);
             return;
           }
           
@@ -636,10 +637,10 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
           errorMessage = ex.getMessage();
           Log.e(TAG, "WriteBytes attempt " + attempt + " failed: " + errorMessage, ex);
           
-          // Wait before retry (except on last attempt)
+          // Wait before retry (except on last attempt) - optimized delays
           if (attempt < MAX_RETRY_ATTEMPTS) {
             try {
-              Thread.sleep(WRITE_DELAY_MS * attempt); // Progressive delay
+              Thread.sleep(FAST_WRITE_DELAY_MS * attempt); // Fast progressive delay: 10ms, 20ms
             } catch (InterruptedException ie) {
               Thread.currentThread().interrupt();
               break;
@@ -659,22 +660,35 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
       int totalBytes = data.length;
       int bytesWritten = 0;
       
+      // For small data, use fast write without chunking
+      if (totalBytes <= CHUNK_SIZE) {
+        return THREAD.writeWithValidationFast(data);
+      }
+      
       while (bytesWritten < totalBytes) {
         int chunkSize = Math.min(CHUNK_SIZE, totalBytes - bytesWritten);
         byte[] chunk = new byte[chunkSize];
         System.arraycopy(data, bytesWritten, chunk, 0, chunkSize);
         
-        if (!THREAD.writeWithValidation(chunk)) {
+        if (!THREAD.writeWithValidationFast(chunk)) {
           Log.e(TAG, "Failed to write chunk at offset " + bytesWritten);
           return false;
         }
         
         bytesWritten += chunkSize;
         
-        // Small delay between chunks
-        Thread.sleep(50);
+        // Adaptive delay based on remaining data
+        int remainingBytes = totalBytes - bytesWritten;
+        if (remainingBytes > CHUNK_SIZE * 2) {
+          Thread.sleep(CHUNK_DELAY_MS); // 20ms for large remaining data
+        } else if (remainingBytes > 0) {
+          Thread.sleep(FAST_WRITE_DELAY_MS); // 10ms for small remaining data
+        }
         
-        Log.d(TAG, "Written " + bytesWritten + "/" + totalBytes + " bytes");
+        // Log progress less frequently for better performance
+        if (bytesWritten % (CHUNK_SIZE * 4) == 0 || bytesWritten == totalBytes) {
+          Log.d(TAG, "Written " + bytesWritten + "/" + totalBytes + " bytes");
+        }
       }
       
       return true;
@@ -1075,9 +1089,9 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
           outputStream.write(bytes);
           outputStream.flush();
           
-          // Add small delay to ensure data transmission
+          // Reduced delay for faster writing
           try {
-            Thread.sleep(50);
+            Thread.sleep(20); // Reduced from 50ms to 20ms
           } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
           }
@@ -1113,15 +1127,10 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
           outputStream.write(bytes);
           outputStream.flush();
           
-          // Wait for data to be transmitted
-          Thread.sleep(WRITE_DELAY_MS);
+          // Wait for data to be transmitted (reduced delay)
+          Thread.sleep(WRITE_DELAY_MS); // Now 30ms instead of 100ms
           
-          // Verify the data was sent (basic validation)
-          if (outputStream != null) {
-            return true;
-          }
-          
-          return false;
+          return true;
         }
       } catch (IOException e) {
         Log.e(TAG, "WriteWithValidation failed: " + e.getMessage(), e);
@@ -1144,6 +1153,39 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
         return false;
       } catch (Exception e) {
         Log.e(TAG, "Unexpected error in writeWithValidation: " + e.getMessage(), e);
+        return false;
+      }
+    }
+    
+    public boolean writeWithValidationFast(byte[] bytes) {
+      if (bytes == null || bytes.length == 0) {
+        return false;
+      }
+      
+      try {
+        synchronized (outputStream) {
+          // Quick connection check
+          if (mmSocket == null || outputStream == null) {
+            return false;
+          }
+          
+          // Write data with minimal delay for speed
+          outputStream.write(bytes);
+          outputStream.flush();
+          
+          // Very short delay for fast transmission
+          Thread.sleep(FAST_WRITE_DELAY_MS); // Only 10ms delay
+          
+          return true;
+        }
+      } catch (IOException e) {
+        Log.e(TAG, "Fast write failed: " + e.getMessage(), e);
+        return false;
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        return false;
+      } catch (Exception e) {
+        Log.e(TAG, "Unexpected error in fast write: " + e.getMessage(), e);
         return false;
       }
     }
