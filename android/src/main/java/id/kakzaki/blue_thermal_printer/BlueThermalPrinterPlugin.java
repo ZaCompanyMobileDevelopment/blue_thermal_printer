@@ -305,6 +305,15 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
         }
         break;
 
+      case "writeBytesNoFeed":
+        if (arguments.containsKey("message")) {
+          byte[] message = (byte[]) arguments.get("message");
+          writeBytesNoFeed(result, message);
+        } else {
+          result.error("invalid_argument", "argument 'message' not found", null);
+        }
+        break;
+
       case "printCustom":
         if (arguments.containsKey("message")) {
           String message = (String) arguments.get("message");
@@ -615,19 +624,12 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
             throw new IOException("Connection is not healthy");
           }
           
-          // Initialize printer and clear any pending data
-          if (!THREAD.writeWithValidation(PrinterCommands.INIT)) {
-            throw new IOException("Failed to initialize printer");
-          }
+          // Minimal printer initialization to avoid extra spacing
           
           // Write data in chunks for better reliability
           success = writeDataInChunks(message);
           
           if (success) {
-            // Add final commands to ensure proper printing
-            // THREAD.writeWithValidation(PrinterCommands.FEED_LINE);
-            // THREAD.writeWithValidation(new byte[]{0x0A, 0x0A}); // Extra line feeds
-            
             Log.d(TAG, "WriteBytes successful on attempt " + attempt);
             result.success(true);
             return;
@@ -651,6 +653,61 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
       
       // All attempts failed
       Log.e(TAG, "WriteBytes failed after " + MAX_RETRY_ATTEMPTS + " attempts");
+      result.error("write_error", "Failed after " + MAX_RETRY_ATTEMPTS + " attempts: " + errorMessage, null);
+    });
+  }
+
+  private void writeBytesNoFeed(Result result, byte[] message) {
+    if (THREAD == null) {
+      result.error("write_error", "not connected", null);
+      return;
+    }
+
+    if (message == null || message.length == 0) {
+      result.error("write_error", "message is null or empty", null);
+      return;
+    }
+
+    AsyncTask.execute(() -> {
+      boolean success = false;
+      String errorMessage = "";
+      
+      for (int attempt = 1; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
+        try {
+          Log.d(TAG, "WriteBytesNoFeed attempt " + attempt + "/" + MAX_RETRY_ATTEMPTS + ", data length: " + message.length);
+          
+          // Check connection health before writing
+          if (!isConnectionHealthy()) {
+            throw new IOException("Connection is not healthy");
+          }
+          
+          // Write data directly without any initialization or extra commands
+          success = writeDataInChunks(message);
+          
+          if (success) {
+            Log.d(TAG, "WriteBytesNoFeed successful on attempt " + attempt);
+            result.success(true);
+            return;
+          }
+          
+        } catch (Exception ex) {
+          errorMessage = ex.getMessage();
+          Log.e(TAG, "WriteBytesNoFeed attempt " + attempt + " failed: " + errorMessage, ex);
+          
+          // Wait before retry (except on last attempt)
+          if (attempt < MAX_RETRY_ATTEMPTS) {
+            try {
+              Thread.sleep(FAST_WRITE_DELAY_MS * attempt);
+            } catch (InterruptedException ie) {
+              Thread.currentThread().interrupt();
+              break;
+            }
+          }
+        }
+      }
+      
+      // All attempts failed
+      Log.e(TAG, "WriteBytesNoFeed failed after " + MAX_RETRY_ATTEMPTS + " attempts");
       result.error("write_error", "Failed after " + MAX_RETRY_ATTEMPTS + " attempts: " + errorMessage, null);
     });
   }

@@ -77,6 +77,10 @@ class BlueThermalPrinter {
   ///writeBytes(Uint8List message)
   Future<dynamic> writeBytes(Uint8List message) => _channel.invokeMethod('writeBytes', {'message': message});
 
+  ///writeBytesNoFeed(Uint8List message) - writes bytes without extra line feeds or spacing
+  Future<dynamic> writeBytesNoFeed(Uint8List message) =>
+      _channel.invokeMethod('writeBytesNoFeed', {'message': message});
+
   ///printCustom(String message, int size, int align,{String? charset})
   Future<dynamic> printCustom(String message, int size, int align, {String? charset}) =>
       _channel.invokeMethod('printCustom', {'message': message, 'size': size, 'align': align, 'charset': charset});
