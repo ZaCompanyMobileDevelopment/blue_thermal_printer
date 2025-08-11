@@ -115509,7 +115509,8 @@ class TestPrint {
         // bluetooth.printNewLine();
         // bluetooth.printNewLine();
         // bluetooth.paperCut();
-        bluetooth.writeBytes(data);
+        // bluetooth.writeBytes(data);
+        bluetooth.defaultWriteBytes(data);
         // bluetooth.writeBytesNoFeed(data);
         //some printer not supported (sometime making image not centered)
         //bluetooth.drawerPin2(); // or you can use bluetooth.drawerPin5();
