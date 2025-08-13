@@ -61,13 +61,18 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
   private static final int REQUEST_COARSE_LOCATION_PERMISSIONS = 1451;
   private static final UUID MY_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
   
-  // WriteBytes configuration constants - optimized for speed
-  private static final int MAX_RETRY_ATTEMPTS = 3;
-  private static final int WRITE_DELAY_MS = 30; // Reduced from 100ms to 30ms
-  private static final int CHUNK_SIZE = 2048; // Increased from 1024 to 2048 bytes
-  private static final int CONNECTION_TIMEOUT_MS = 5000;
-  private static final int FAST_WRITE_DELAY_MS = 10; // For small chunks
-  private static final int CHUNK_DELAY_MS = 20; // Reduced delay between chunks
+  // WriteBytes configuration constants - optimized for reliability and power cycling
+  private static final int MAX_RETRY_ATTEMPTS = 7; // Further increased for robust power cycle recovery
+  private static final int WRITE_DELAY_MS = 50; // Optimal for reliability after power cycle
+  private static final int CHUNK_SIZE = 512; // Smaller chunks for better reliability
+  private static final int CONNECTION_TIMEOUT_MS = 10000; // Extended timeout for power cycle scenarios
+  private static final int FAST_WRITE_DELAY_MS = 30; // Balanced speed/reliability
+  private static final int CHUNK_DELAY_MS = 75; // Increased for thermal printer processing
+  private static final int PRINTER_INIT_DELAY_MS = 300; // Extended initialization delay
+  private static final int POWER_CYCLE_RECOVERY_DELAY_MS = 1000; // Longer delay for power cycle
+  private static final int PRINTER_WAKE_DELAY_MS = 500; // Wake-up sequence delay
+  private static final int STATUS_CHECK_DELAY_MS = 100; // Status verification delay
+  private static final int MAX_WAKE_ATTEMPTS = 3; // Wake-up retry attempts
   private static ConnectedThread THREAD = null;
   private BluetoothAdapter mBluetoothAdapter;
 
@@ -619,30 +624,39 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
         try {
           Log.d(TAG, "WriteBytes attempt " + attempt + "/" + MAX_RETRY_ATTEMPTS + ", data length: " + message.length);
           
-          // Check connection health before writing
-          if (!isConnectionHealthy()) {
-            throw new IOException("Connection is not healthy");
+          // Enhanced connection health check with recovery
+          if (!isConnectionHealthyWithRecovery()) {
+            throw new IOException("Connection is not healthy and recovery failed");
           }
           
-          // Minimal printer initialization to avoid extra spacing
+          // Initialize printer for reliable printing after power cycle
+          if (!initializePrinterForWriteBytes()) {
+            throw new IOException("Printer initialization failed");
+          }
           
-          // Write data in chunks for better reliability
-          success = writeDataInChunks(message);
+          // Write data in chunks with enhanced error handling
+          success = writeDataInChunksWithRecovery(message);
           
           if (success) {
             Log.d(TAG, "WriteBytes successful on attempt " + attempt);
-            result.success(true);
-            return;
+            // Send final print commands to ensure proper output
+            if (finalizePrinterOutput()) {
+              result.success(true);
+              return;
+            }
           }
           
         } catch (Exception ex) {
           errorMessage = ex.getMessage();
           Log.e(TAG, "WriteBytes attempt " + attempt + " failed: " + errorMessage, ex);
           
-          // Wait before retry (except on last attempt) - optimized delays
+          // Progressive delay with power cycle recovery consideration
           if (attempt < MAX_RETRY_ATTEMPTS) {
             try {
-              Thread.sleep(FAST_WRITE_DELAY_MS * attempt); // Fast progressive delay: 10ms, 20ms
+              int delay = attempt <= 2 ? 
+                FAST_WRITE_DELAY_MS * attempt : // Quick retries first
+                POWER_CYCLE_RECOVERY_DELAY_MS; // Longer delay for potential power cycle recovery
+              Thread.sleep(delay);
             } catch (InterruptedException ie) {
               Thread.currentThread().interrupt();
               break;
@@ -737,9 +751,9 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
         // Adaptive delay based on remaining data
         int remainingBytes = totalBytes - bytesWritten;
         if (remainingBytes > CHUNK_SIZE * 2) {
-          Thread.sleep(CHUNK_DELAY_MS); // 20ms for large remaining data
+          Thread.sleep(CHUNK_DELAY_MS); // 50ms for large remaining data
         } else if (remainingBytes > 0) {
-          Thread.sleep(FAST_WRITE_DELAY_MS); // 10ms for small remaining data
+          Thread.sleep(FAST_WRITE_DELAY_MS); // 25ms for small remaining data
         }
         
         // Log progress less frequently for better performance
@@ -755,6 +769,74 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
     }
   }
   
+  private boolean writeDataInChunksWithRecovery(byte[] data) {
+    try {
+      int totalBytes = data.length;
+      int bytesWritten = 0;
+      int consecutiveFailures = 0;
+      final int maxConsecutiveFailures = 3;
+      
+      Log.d(TAG, "Starting enhanced chunked write for " + totalBytes + " bytes");
+      
+      // For small data, use enhanced validation write
+      if (totalBytes <= CHUNK_SIZE) {
+        return THREAD.writeWithValidationEnhanced(data);
+      }
+      
+      while (bytesWritten < totalBytes) {
+        int chunkSize = Math.min(CHUNK_SIZE, totalBytes - bytesWritten);
+        byte[] chunk = new byte[chunkSize];
+        System.arraycopy(data, bytesWritten, chunk, 0, chunkSize);
+        
+        // Try to write chunk with enhanced validation
+        boolean chunkSuccess = THREAD.writeWithValidationEnhanced(chunk);
+        
+        if (chunkSuccess) {
+          bytesWritten += chunkSize;
+          consecutiveFailures = 0; // Reset failure counter on success
+          
+          // Adaptive delay based on remaining data and printer response
+          int remainingBytes = totalBytes - bytesWritten;
+          if (remainingBytes > CHUNK_SIZE * 2) {
+            Thread.sleep(CHUNK_DELAY_MS); // 50ms for large remaining data
+          } else if (remainingBytes > 0) {
+            Thread.sleep(FAST_WRITE_DELAY_MS); // 25ms for small remaining data
+          }
+          
+          // Log progress
+          if (bytesWritten % (CHUNK_SIZE * 2) == 0 || bytesWritten == totalBytes) {
+            Log.d(TAG, "Enhanced write progress: " + bytesWritten + "/" + totalBytes + " bytes");
+          }
+          
+        } else {
+          consecutiveFailures++;
+          Log.w(TAG, "Chunk write failed at offset " + bytesWritten + ", consecutive failures: " + consecutiveFailures);
+          
+          if (consecutiveFailures >= maxConsecutiveFailures) {
+            Log.e(TAG, "Too many consecutive chunk failures, aborting write operation");
+            return false;
+          }
+          
+          // Wait longer before retrying failed chunk
+          Thread.sleep(POWER_CYCLE_RECOVERY_DELAY_MS);
+          
+          // Verify connection is still healthy before retry
+          if (!isConnectionHealthyWithRecovery()) {
+            Log.e(TAG, "Connection lost during chunk write operation");
+            return false;
+          }
+        }
+      }
+      
+      Log.d(TAG, "Enhanced chunked write completed successfully");
+      return true;
+      
+    } catch (Exception e) {
+      Log.e(TAG, "Error in enhanced chunked write: " + e.getMessage(), e);
+      return false;
+    }
+  }
+  
   private boolean isConnectionHealthy() {
     try {
       return THREAD != null && 
@@ -763,6 +845,96 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
              THREAD.outputStream != null;
     } catch (Exception e) {
       Log.e(TAG, "Error checking connection health: " + e.getMessage(), e);
+      return false;
+    }
+  }
+  
+  private boolean isConnectionHealthyWithRecovery() {
+    try {
+      if (THREAD == null || THREAD.mmSocket == null || THREAD.outputStream == null) {
+        Log.w(TAG, "Connection components are null");
+        return false;
+      }
+      
+      // Check if socket is connected
+      if (!THREAD.mmSocket.isConnected()) {
+        Log.w(TAG, "Bluetooth socket is not connected");
+        return false;
+      }
+      
+      // Test the connection by sending a simple status request
+      try {
+        // Send ESC @ (printer reset/initialize command) as a connection test
+        byte[] testCommand = {0x1B, 0x40}; // ESC @
+        synchronized (THREAD.outputStream) {
+          THREAD.outputStream.write(testCommand);
+          THREAD.outputStream.flush();
+        }
+        Thread.sleep(100); // Wait for printer to respond
+        return true;
+      } catch (Exception e) {
+        Log.w(TAG, "Connection test failed: " + e.getMessage());
+        return false;
+      }
+      
+    } catch (Exception e) {
+      Log.e(TAG, "Error in enhanced connection health check: " + e.getMessage(), e);
+      return false;
+    }
+  }
+  
+  private boolean initializePrinterForWriteBytes() {
+    try {
+      Log.d(TAG, "Initializing printer for writeBytes operation");
+      
+      // Printer initialization sequence for reliable operation after power cycle
+      byte[] initSequence = {
+        0x1B, 0x40,       // ESC @ - Initialize printer (reset to default state)
+        0x1B, 0x21, 0x00, // ESC ! - Select character font (normal)
+        0x1B, 0x61, 0x00, // ESC a - Select left justification
+        0x1C, 0x2E       // FS . - Cancel Chinese character mode
+      };
+      
+      synchronized (THREAD.outputStream) {
+        THREAD.outputStream.write(initSequence);
+        THREAD.outputStream.flush();
+      }
+      
+      // Wait for printer to process initialization
+      Thread.sleep(PRINTER_INIT_DELAY_MS);
+      
+      Log.d(TAG, "Printer initialization completed");
+      return true;
+      
+    } catch (Exception e) {
+      Log.e(TAG, "Printer initialization failed: " + e.getMessage(), e);
+      return false;
+    }
+  }
+  
+  private boolean finalizePrinterOutput() {
+    try {
+      Log.d(TAG, "Finalizing printer output");
+      
+      // Send command to ensure all data is printed and buffer is flushed
+      byte[] finalizeSequence = {
+        0x0A,             // LF - Line feed to ensure last line prints
+        0x1B, 0x64, 0x02  // ESC d n - Feed n lines (2 lines for spacing)
+      };
+      
+      synchronized (THREAD.outputStream) {
+        THREAD.outputStream.write(finalizeSequence);
+        THREAD.outputStream.flush();
+      }
+      
+      // Wait for final commands to process
+      Thread.sleep(100);
+      
+      Log.d(TAG, "Printer output finalization completed");
+      return true;
+      
+    } catch (Exception e) {
+      Log.e(TAG, "Printer output finalization failed: " + e.getMessage(), e);
       return false;
     }
   }
@@ -1146,9 +1318,9 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
           outputStream.write(bytes);
           outputStream.flush();
           
-          // Reduced delay for faster writing
+          // Moderate delay for reliable writing after power cycle
           try {
-            Thread.sleep(20); // Reduced from 50ms to 20ms
+            Thread.sleep(30); // Increased for better reliability
           } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
           }
@@ -1231,7 +1403,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
           outputStream.flush();
           
           // Very short delay for fast transmission
-          Thread.sleep(FAST_WRITE_DELAY_MS); // Only 10ms delay
+          Thread.sleep(FAST_WRITE_DELAY_MS); // 25ms delay
           
           return true;
         }
@@ -1243,6 +1415,61 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
         return false;
       } catch (Exception e) {
         Log.e(TAG, "Unexpected error in fast write: " + e.getMessage(), e);
+        return false;
+      }
+    }
+    
+    public boolean writeWithValidationEnhanced(byte[] bytes) {
+      if (bytes == null || bytes.length == 0) {
+        return false;
+      }
+      
+      try {
+        synchronized (outputStream) {
+          // Comprehensive connection validation
+          if (mmSocket == null || outputStream == null) {
+            Log.w(TAG, "Enhanced write: Connection components null");
+            return false;
+          }
+          
+          if (!mmSocket.isConnected()) {
+            Log.w(TAG, "Enhanced write: Socket not connected");
+            return false;
+          }
+          
+          // Write data with enhanced error checking
+          outputStream.write(bytes);
+          outputStream.flush();
+          
+          // Wait appropriate time for reliable transmission after power cycle
+          Thread.sleep(WRITE_DELAY_MS); // 50ms for reliability
+          
+          // Additional flush to ensure data is sent
+          outputStream.flush();
+          
+          return true;
+        }
+      } catch (IOException e) {
+        Log.e(TAG, "Enhanced write failed: " + e.getMessage(), e);
+        
+        // Check if it's a connection issue that needs recovery
+        try {
+          if (mmSocket != null && !mmSocket.isConnected()) {
+            Log.w(TAG, "Connection lost during enhanced write");
+            cancel();
+            THREAD = null;
+          }
+        } catch (Exception ex) {
+          Log.e(TAG, "Error during enhanced write recovery: " + ex.getMessage(), ex);
+        }
+        
+        return false;
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        Log.e(TAG, "Enhanced write interrupted: " + e.getMessage(), e);
+        return false;
+      } catch (Exception e) {
+        Log.e(TAG, "Unexpected error in enhanced write: " + e.getMessage(), e);
         return false;
       }
     }
