@@ -300,6 +300,14 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
           result.error("invalid_argument", "argument 'message' not found", null);
         }
         break;
+        case "defaultwriteBytes":
+        if (arguments.containsKey("message")) {
+          byte[] message = (byte[]) arguments.get("message");
+          defaultWriteBytes(result, message);
+        } else {
+          result.error("invalid_argument", "argument 'message' not found", null);
+        }
+        break;
 
       case "writeBytes":
         if (arguments.containsKey("message")) {
@@ -598,6 +606,20 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
 
     try {
       THREAD.write(message.getBytes());
+      result.success(true);
+    } catch (Exception ex) {
+      Log.e(TAG, ex.getMessage(), ex);
+      result.error("write_error", ex.getMessage(), exceptionToString(ex));
+    }
+  }
+    private void  defaultWriteBytes(Result result, byte[] message) {
+    if (THREAD == null) {
+      result.error("write_error", "not connected", null);
+      return;
+    }
+
+    try {
+      THREAD.write(message);
       result.success(true);
     } catch (Exception ex) {
       Log.e(TAG, ex.getMessage(), ex);
