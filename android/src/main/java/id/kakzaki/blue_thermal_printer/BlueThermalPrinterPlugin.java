@@ -76,7 +76,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
   
   // Fast WriteBytes configuration constants - optimized for speed
   private static final int FAST_MAX_RETRY_ATTEMPTS = 2; // Fewer retries for speed
-  private static final int FAST_WRITE_DELAY_MS = 8; // Minimal delay for maximum speed
+  private static final int FAST_WRITE_DELAY_MS2 = 8; // Minimal delay for maximum speed
   private static final int FAST_CHUNK_SIZE = 4096; // Larger chunks for better throughput
   private static final int FAST_CHUNK_DELAY_MS = 15; // Minimal chunk delay
   private static final int FAST_INIT_DELAY_MS = 30; // Quick initialization
@@ -680,7 +680,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
           // Minimal delay between retries for speed
           if (attempt < FAST_MAX_RETRY_ATTEMPTS) {
             try {
-              Thread.sleep(FAST_WRITE_DELAY_MS * attempt);
+              Thread.sleep(FAST_WRITE_DELAY_MS2 * attempt);
             } catch (InterruptedException ie) {
               Thread.currentThread().interrupt();
               break;
@@ -1595,7 +1595,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
           outputStream.flush();
           
           // Ultra-fast delay - just enough to prevent buffer overflow
-          Thread.sleep(FAST_WRITE_DELAY_MS); // 8ms for speed
+          Thread.sleep(FAST_WRITE_DELAY_MS2); // 8ms for speed
           
           return true;
         }
