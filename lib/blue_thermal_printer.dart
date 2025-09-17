@@ -142,6 +142,10 @@ class BlueThermalPrinter {
 
   ///writeBytesGP1324D(Uint8List message) - Specialized write function for GP1324D printer
   Future<dynamic> writeBytesGP1324D(Uint8List message) => _channel.invokeMethod('writeBytesGP1324D', {'message': message});
+
+  ///printReceiptGP1324D(String content, {int fontSize = 1, int align = 0}) - Receipt printing function for GP1324D printer
+  Future<dynamic> printReceiptGP1324D(String content, {int fontSize = 1, int align = 0}) =>
+      _channel.invokeMethod('printReceiptGP1324D', {'content': content, 'fontSize': fontSize, 'align': align});
 }
 
 class BluetoothDevice {

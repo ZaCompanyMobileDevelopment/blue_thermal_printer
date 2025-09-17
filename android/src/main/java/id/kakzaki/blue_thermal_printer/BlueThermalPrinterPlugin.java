@@ -441,6 +441,17 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
         }
         break;
 
+      case "printReceiptGP1324D":
+        if (arguments.containsKey("content")) {
+          String content = (String) arguments.get("content");
+          int fontSize = (int) arguments.get("fontSize");
+          int align = (int) arguments.get("align");
+          printReceiptGP1324D(result, content, fontSize, align);
+        } else {
+          result.error("invalid_argument", "argument 'content' not found", null);
+        }
+        break;
+
       default:
         result.notImplemented();
         break;
@@ -1129,6 +1140,225 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
 
     } catch (Exception e) {
       Log.e(TAG, "GP1324D finalization failed: " + e.getMessage(), e);
+      return false;
+    }
+  }
+
+  private void printReceiptGP1324D(Result result, String content, int fontSize, int align) {
+    if (THREAD == null) {
+      result.error("write_error", "not connected", null);
+      return;
+    }
+
+    if (content == null || content.isEmpty()) {
+      result.error("write_error", "content is null or empty", null);
+      return;
+    }
+
+    AsyncTask.execute(() -> {
+      try {
+        Log.d(TAG, "GP1324D Receipt Print starting, content length: " + content.length());
+
+        // GP1324D connection validation
+        if (!isConnectionHealthyGP1324D()) {
+          result.error("write_error", "GP1324D connection is not healthy", null);
+          return;
+        }
+
+        // Initialize GP1324D for receipt printing (ESC/POS mode)
+        if (!initializeReceiptModeGP1324D()) {
+          result.error("write_error", "GP1324D receipt mode initialization failed", null);
+          return;
+        }
+
+        // Generate receipt commands
+        byte[] receiptData = generateReceiptCommandsGP1324D(content, fontSize, align);
+        if (receiptData == null || receiptData.length == 0) {
+          result.error("write_error", "Failed to generate receipt commands", null);
+          return;
+        }
+
+        // Write receipt data
+        if (!writeReceiptDataGP1324D(receiptData)) {
+          result.error("write_error", "GP1324D receipt data write failed", null);
+          return;
+        }
+
+        // Finalize receipt output
+        if (!finalizeReceiptGP1324D()) {
+          result.error("write_error", "GP1324D receipt finalization failed", null);
+          return;
+        }
+
+        Log.d(TAG, "GP1324D Receipt Print completed successfully");
+        result.success(true);
+
+      } catch (Exception ex) {
+        Log.e(TAG, "GP1324D Receipt Print failed: " + ex.getMessage(), ex);
+        result.error("write_error", "GP1324D receipt print error: " + ex.getMessage(), null);
+      }
+    });
+  }
+
+  private boolean initializeReceiptModeGP1324D() {
+    try {
+      Log.d(TAG, "GP1324D: Initializing receipt mode");
+
+      // Receipt mode initialization with ESC/POS commands
+      byte[] initSequence = {
+        0x1B, 0x40,       // ESC @ - Initialize printer
+        0x1B, 0x21, 0x00, // ESC ! - Select character font (normal)
+        0x1B, 0x61, 0x00, // ESC a - Left align (default for receipts)
+        0x1B, 0x74, 0x00, // ESC t - Select character code table (PC437)
+        0x1C, 0x2E,       // FS . - Cancel Chinese character mode
+        0x1B, 0x33, 0x20  // ESC 3 n - Set line spacing to 32/180 inch
+      };
+
+      synchronized (THREAD.outputStream) {
+        THREAD.outputStream.write(initSequence);
+        THREAD.outputStream.flush();
+      }
+
+      // GP1324D needs time for mode switching
+      Thread.sleep(300);
+
+      Log.d(TAG, "GP1324D: Receipt mode initialization completed");
+      return true;
+
+    } catch (Exception e) {
+      Log.e(TAG, "GP1324D receipt mode initialization failed: " + e.getMessage(), e);
+      return false;
+    }
+  }
+
+  private byte[] generateReceiptCommandsGP1324D(String content, int fontSize, int align) {
+    try {
+      List<Byte> commands = new ArrayList<>();
+
+      // Set font size (ESC/POS commands)
+      byte[] fontSizeCmd;
+      switch (fontSize) {
+        case 0: // Small
+          fontSizeCmd = new byte[]{0x1B, 0x21, 0x00}; // ESC ! 0 - Normal
+          break;
+        case 1: // Normal (default)
+          fontSizeCmd = new byte[]{0x1B, 0x21, 0x08}; // ESC ! 8 - Emphasized
+          break;
+        case 2: // Large
+          fontSizeCmd = new byte[]{0x1B, 0x21, 0x30}; // ESC ! 48 - Double height/width
+          break;
+        default:
+          fontSizeCmd = new byte[]{0x1B, 0x21, 0x08}; // Default to normal
+      }
+
+      // Add font size commands
+      for (byte b : fontSizeCmd) {
+        commands.add(b);
+      }
+
+      // Set alignment (ESC/POS commands)
+      byte[] alignCmd;
+      switch (align) {
+        case 0: // Left align
+          alignCmd = new byte[]{0x1B, 0x61, 0x00}; // ESC a 0
+          break;
+        case 1: // Center align
+          alignCmd = new byte[]{0x1B, 0x61, 0x01}; // ESC a 1
+          break;
+        case 2: // Right align
+          alignCmd = new byte[]{0x1B, 0x61, 0x02}; // ESC a 2
+          break;
+        default:
+          alignCmd = new byte[]{0x1B, 0x61, 0x00}; // Default to left
+      }
+
+      // Add alignment commands
+      for (byte b : alignCmd) {
+        commands.add(b);
+      }
+
+      // Add content (convert string to bytes)
+      byte[] contentBytes = content.getBytes("UTF-8");
+      for (byte b : contentBytes) {
+        commands.add(b);
+      }
+
+      // Add line feed
+      commands.add((byte) 0x0A); // LF
+
+      // Convert List<Byte> to byte[]
+      byte[] result = new byte[commands.size()];
+      for (int i = 0; i < commands.size(); i++) {
+        result[i] = commands.get(i);
+      }
+
+      Log.d(TAG, "GP1324D: Generated " + result.length + " bytes of receipt commands");
+      return result;
+
+    } catch (Exception e) {
+      Log.e(TAG, "GP1324D receipt command generation failed: " + e.getMessage(), e);
+      return null;
+    }
+  }
+
+  private boolean writeReceiptDataGP1324D(byte[] data) {
+    try {
+      int totalBytes = data.length;
+      int chunkSize = 64; // Smaller chunks for GP1324D reliability
+      int bytesWritten = 0;
+
+      Log.d(TAG, "GP1324D Receipt: Writing " + totalBytes + " bytes in chunks of " + chunkSize);
+
+      while (bytesWritten < totalBytes) {
+        int currentChunkSize = Math.min(chunkSize, totalBytes - bytesWritten);
+        byte[] chunk = new byte[currentChunkSize];
+        System.arraycopy(data, bytesWritten, chunk, 0, currentChunkSize);
+
+        synchronized (THREAD.outputStream) {
+          THREAD.outputStream.write(chunk);
+          THREAD.outputStream.flush();
+        }
+
+        bytesWritten += currentChunkSize;
+
+        // GP1324D specific timing for receipts - shorter delays for text
+        Thread.sleep(50); // 50ms between chunks for receipt printing
+
+        Log.d(TAG, "GP1324D Receipt: Written " + bytesWritten + "/" + totalBytes + " bytes");
+      }
+
+      return true;
+    } catch (Exception e) {
+      Log.e(TAG, "GP1324D receipt data write failed: " + e.getMessage(), e);
+      return false;
+    }
+  }
+
+  private boolean finalizeReceiptGP1324D() {
+    try {
+      Log.d(TAG, "GP1324D: Finalizing receipt output");
+
+      // Receipt finalization commands
+      byte[] finalizeSequence = {
+        0x0A,             // LF - Line feed
+        0x0A,             // LF - Another line feed
+        0x1B, 0x64, 0x02, // ESC d 2 - Feed 2 lines
+        0x1B, 0x61, 0x00  // ESC a 0 - Reset to left align
+      };
+
+      synchronized (THREAD.outputStream) {
+        THREAD.outputStream.write(finalizeSequence);
+        THREAD.outputStream.flush();
+      }
+
+      // Wait for GP1324D to process final commands
+      Thread.sleep(150);
+
+      Log.d(TAG, "GP1324D: Receipt finalization completed");
+      return true;
+
+    } catch (Exception e) {
+      Log.e(TAG, "GP1324D receipt finalization failed: " + e.getMessage(), e);
       return false;
     }
   }
