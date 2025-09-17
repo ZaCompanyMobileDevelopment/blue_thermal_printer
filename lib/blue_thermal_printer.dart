@@ -139,6 +139,9 @@ class BlueThermalPrinter {
         'charset': charset,
         'format': format
       });
+
+  ///writeBytesGP1324D(Uint8List message) - Specialized write function for GP1324D printer
+  Future<dynamic> writeBytesGP1324D(Uint8List message) => _channel.invokeMethod('writeBytesGP1324D', {'message': message});
 }
 
 class BluetoothDevice {

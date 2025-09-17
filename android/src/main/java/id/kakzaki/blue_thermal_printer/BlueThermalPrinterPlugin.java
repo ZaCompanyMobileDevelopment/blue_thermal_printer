@@ -431,6 +431,16 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
           result.error("invalid_argument", "argument 'message' not found", null);
         }
         break;
+
+      case "writeBytesGP1324D":
+        if (arguments.containsKey("message")) {
+          byte[] message = (byte[]) arguments.get("message");
+          writeBytesGP1324D(result, message);
+        } else {
+          result.error("invalid_argument", "argument 'message' not found", null);
+        }
+        break;
+
       default:
         result.notImplemented();
         break;
@@ -709,29 +719,29 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
     AsyncTask.execute(() -> {
       boolean success = false;
       String errorMessage = "";
-      
+
       for (int attempt = 1; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
         try {
           Log.d(TAG, "WriteBytesNoFeed attempt " + attempt + "/" + MAX_RETRY_ATTEMPTS + ", data length: " + message.length);
-          
+
           // Check connection health before writing
           if (!isConnectionHealthy()) {
             throw new IOException("Connection is not healthy");
           }
-          
+
           // Write data directly without any initialization or extra commands
           success = writeDataInChunks(message);
-          
+
           if (success) {
             Log.d(TAG, "WriteBytesNoFeed successful on attempt " + attempt);
             result.success(true);
             return;
           }
-          
+
         } catch (Exception ex) {
           errorMessage = ex.getMessage();
           Log.e(TAG, "WriteBytesNoFeed attempt " + attempt + " failed: " + errorMessage, ex);
-          
+
           // Wait before retry (except on last attempt)
           if (attempt < MAX_RETRY_ATTEMPTS) {
             try {
@@ -743,10 +753,59 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
           }
         }
       }
-      
+
       // All attempts failed
       Log.e(TAG, "WriteBytesNoFeed failed after " + MAX_RETRY_ATTEMPTS + " attempts");
       result.error("write_error", "Failed after " + MAX_RETRY_ATTEMPTS + " attempts: " + errorMessage, null);
+    });
+  }
+
+  private void writeBytesGP1324D(Result result, byte[] message) {
+    if (THREAD == null) {
+      result.error("write_error", "not connected", null);
+      return;
+    }
+
+    if (message == null || message.length == 0) {
+      result.error("write_error", "message is null or empty", null);
+      return;
+    }
+
+    AsyncTask.execute(() -> {
+      try {
+        Log.d(TAG, "GP1324D WriteBytes starting, data length: " + message.length);
+
+        // GP1324D specific connection validation
+        if (!isConnectionHealthyGP1324D()) {
+          result.error("write_error", "GP1324D connection is not healthy", null);
+          return;
+        }
+
+        // Initialize GP1324D printer with proper timing
+        if (!initializePrinterGP1324D()) {
+          result.error("write_error", "GP1324D printer initialization failed", null);
+          return;
+        }
+
+        // Write data with GP1324D optimized timing
+        if (!writeDataGP1324D(message)) {
+          result.error("write_error", "GP1324D data write failed", null);
+          return;
+        }
+
+        // Finalize GP1324D output
+        if (!finalizePrinterGP1324D()) {
+          result.error("write_error", "GP1324D finalization failed", null);
+          return;
+        }
+
+        Log.d(TAG, "GP1324D WriteBytes completed successfully");
+        result.success(true);
+
+      } catch (Exception ex) {
+        Log.e(TAG, "GP1324D WriteBytes failed: " + ex.getMessage(), ex);
+        result.error("write_error", "GP1324D write error: " + ex.getMessage(), null);
+      }
     });
   }
   
@@ -963,12 +1022,123 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
     }
   }
   
+  // GP1324D specific helper functions
+  private boolean isConnectionHealthyGP1324D() {
+    try {
+      if (THREAD == null || THREAD.mmSocket == null || THREAD.outputStream == null) {
+        Log.w(TAG, "GP1324D: Connection components are null");
+        return false;
+      }
+
+      if (!THREAD.mmSocket.isConnected()) {
+        Log.w(TAG, "GP1324D: Bluetooth socket is not connected");
+        return false;
+      }
+
+      return true;
+    } catch (Exception e) {
+      Log.e(TAG, "GP1324D connection check failed: " + e.getMessage(), e);
+      return false;
+    }
+  }
+
+  private boolean initializePrinterGP1324D() {
+    try {
+      Log.d(TAG, "GP1324D: Initializing printer");
+
+      // GP1324D specific initialization sequence
+      byte[] initSequence = {
+        0x1B, 0x40,       // ESC @ - Initialize printer (required for GP1324D)
+        0x1B, 0x21, 0x00, // ESC ! - Select character font (normal)
+        0x1B, 0x61, 0x00, // ESC a - Select left justification
+        0x1C, 0x2E,       // FS . - Cancel Chinese character mode
+        0x1B, 0x74, 0x00  // ESC t - Select character code table (PC437)
+      };
+
+      synchronized (THREAD.outputStream) {
+        THREAD.outputStream.write(initSequence);
+        THREAD.outputStream.flush();
+      }
+
+      // GP1324D needs longer initialization time
+      Thread.sleep(500);
+
+      Log.d(TAG, "GP1324D: Printer initialization completed");
+      return true;
+
+    } catch (Exception e) {
+      Log.e(TAG, "GP1324D printer initialization failed: " + e.getMessage(), e);
+      return false;
+    }
+  }
+
+  private boolean writeDataGP1324D(byte[] data) {
+    try {
+      int totalBytes = data.length;
+      int chunkSize = 64; // Smaller chunks for GP1324D reliability
+      int bytesWritten = 0;
+
+      Log.d(TAG, "GP1324D: Writing " + totalBytes + " bytes in chunks of " + chunkSize);
+
+      while (bytesWritten < totalBytes) {
+        int currentChunkSize = Math.min(chunkSize, totalBytes - bytesWritten);
+        byte[] chunk = new byte[currentChunkSize];
+        System.arraycopy(data, bytesWritten, chunk, 0, currentChunkSize);
+
+        synchronized (THREAD.outputStream) {
+          THREAD.outputStream.write(chunk);
+          THREAD.outputStream.flush();
+        }
+
+        bytesWritten += currentChunkSize;
+
+        // GP1324D specific timing - longer delays for reliability
+        Thread.sleep(100); // 100ms between chunks for GP1324D
+
+        Log.d(TAG, "GP1324D: Written " + bytesWritten + "/" + totalBytes + " bytes");
+      }
+
+      return true;
+    } catch (Exception e) {
+      Log.e(TAG, "GP1324D data write failed: " + e.getMessage(), e);
+      return false;
+    }
+  }
+
+  private boolean finalizePrinterGP1324D() {
+    try {
+      Log.d(TAG, "GP1324D: Finalizing printer output");
+
+      // GP1324D specific finalization commands
+      byte[] finalizeSequence = {
+        0x0A,             // LF - Line feed
+        0x0A,             // LF - Another line feed for spacing
+        0x1B, 0x64, 0x03  // ESC d n - Feed 3 lines for proper spacing
+      };
+
+      synchronized (THREAD.outputStream) {
+        THREAD.outputStream.write(finalizeSequence);
+        THREAD.outputStream.flush();
+      }
+
+      // Wait for GP1324D to process final commands
+      Thread.sleep(200);
+
+      Log.d(TAG, "GP1324D: Finalization completed");
+      return true;
+
+    } catch (Exception e) {
+      Log.e(TAG, "GP1324D finalization failed: " + e.getMessage(), e);
+      return false;
+    }
+  }
+
   // Fast helper functions for optimized writeBytes
   private boolean isConnectionHealthyFast() {
     try {
-      return THREAD != null && 
-             THREAD.mmSocket != null && 
-             THREAD.mmSocket.isConnected() && 
+      return THREAD != null &&
+             THREAD.mmSocket != null &&
+             THREAD.mmSocket.isConnected() &&
              THREAD.outputStream != null;
     } catch (Exception e) {
       Log.e(TAG, "Fast connection check failed: " + e.getMessage(), e);
