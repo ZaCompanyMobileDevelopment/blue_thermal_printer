@@ -1086,7 +1086,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
   private boolean writeDataGP1324D(byte[] data) {
     try {
       int totalBytes = data.length;
-      int chunkSize = 64; // Smaller chunks for GP1324D reliability
+      int chunkSize = 256; // Increased chunk size for faster throughput
       int bytesWritten = 0;
 
       Log.d(TAG, "GP1324D: Writing " + totalBytes + " bytes in chunks of " + chunkSize);
@@ -1103,8 +1103,8 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
 
         bytesWritten += currentChunkSize;
 
-        // GP1324D specific timing - longer delays for reliability
-        Thread.sleep(100); // 100ms between chunks for GP1324D
+        // Use faster delay for improved speed
+        Thread.sleep(FAST_WRITE_DELAY_MS2); // 8ms for fast output
 
         Log.d(TAG, "GP1324D: Written " + bytesWritten + "/" + totalBytes + " bytes");
       }
