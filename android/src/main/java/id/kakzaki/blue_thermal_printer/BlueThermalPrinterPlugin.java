@@ -441,6 +441,15 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
         }
         break;
 
+      case "writeBytesGP1324DNoSpacing":
+        if (arguments.containsKey("message")) {
+          byte[] message = (byte[]) arguments.get("message");
+          writeBytesGP1324DNoSpacing(result, message);
+        } else {
+          result.error("invalid_argument", "argument 'message' not found", null);
+        }
+        break;
+
       case "printReceiptGP1324D":
         if (arguments.containsKey("content")) {
           String content = (String) arguments.get("content");
@@ -819,7 +828,44 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
       }
     });
   }
-  
+
+  private void writeBytesGP1324DNoSpacing(Result result, byte[] message) {
+    if (THREAD == null) {
+      result.error("write_error", "not connected", null);
+      return;
+    }
+
+    if (message == null || message.length == 0) {
+      result.error("write_error", "message is null or empty", null);
+      return;
+    }
+
+    AsyncTask.execute(() -> {
+      try {
+        Log.d(TAG, "GP1324D NoSpacing WriteBytes starting, data length: " + message.length);
+
+        // GP1324D specific connection validation
+        if (!isConnectionHealthyGP1324D()) {
+          result.error("write_error", "GP1324D connection is not healthy", null);
+          return;
+        }
+
+        // Write data directly without initialization and finalization to avoid blank spaces
+        if (!writeDataGP1324D(message)) {
+          result.error("write_error", "GP1324D data write failed", null);
+          return;
+        }
+
+        Log.d(TAG, "GP1324D NoSpacing WriteBytes completed successfully");
+        result.success(true);
+
+      } catch (Exception ex) {
+        Log.e(TAG, "GP1324D NoSpacing WriteBytes failed: " + ex.getMessage(), ex);
+        result.error("write_error", "GP1324D no spacing write error: " + ex.getMessage(), null);
+      }
+    });
+  }
+
   private boolean writeDataInChunks(byte[] data) {
     try {
       int totalBytes = data.length;
@@ -1086,7 +1132,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
   private boolean writeDataGP1324D(byte[] data) {
     try {
       int totalBytes = data.length;
-      int chunkSize = 256; // Increased chunk size for faster throughput
+      int chunkSize = 512; // Larger chunks for maximum throughput
       int bytesWritten = 0;
 
       Log.d(TAG, "GP1324D: Writing " + totalBytes + " bytes in chunks of " + chunkSize);
@@ -1098,13 +1144,18 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
 
         synchronized (THREAD.outputStream) {
           THREAD.outputStream.write(chunk);
-          THREAD.outputStream.flush();
+          // Only flush every few chunks for better performance
+          if (bytesWritten + currentChunkSize >= totalBytes || (bytesWritten % (chunkSize * 4)) == 0) {
+            THREAD.outputStream.flush();
+          }
         }
 
         bytesWritten += currentChunkSize;
 
-        // Use faster delay for improved speed
-        Thread.sleep(FAST_WRITE_DELAY_MS2); // 8ms for fast output
+        // Minimal delay only for larger chunks
+        if (currentChunkSize >= 512) {
+          Thread.sleep(2); // Reduced to 2ms for maximum speed
+        }
 
         Log.d(TAG, "GP1324D: Written " + bytesWritten + "/" + totalBytes + " bytes");
       }
