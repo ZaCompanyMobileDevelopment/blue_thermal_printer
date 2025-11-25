@@ -149,6 +149,29 @@ class BlueThermalPrinter {
   ///printReceiptGP1324D(String content, {int fontSize = 1, int align = 0}) - Receipt printing function for GP1324D printer
   Future<dynamic> printReceiptGP1324D(String content, {int fontSize = 1, int align = 0}) =>
       _channel.invokeMethod('printReceiptGP1324D', {'content': content, 'fontSize': fontSize, 'align': align});
+
+  /// clearBuffer() - Fix white paper on power-on issue
+  /// Usage: Call after connect() to clear residual data
+  Future<dynamic> clearBuffer() => _channel.invokeMethod('clearBuffer');
+
+  /// clearAfterPrint() - Clear buffer after print job
+  /// Usage: Call after printing to prevent data residue on next power cycle
+  Future<dynamic> clearAfterPrint() => _channel.invokeMethod('clearAfterPrint');
+
+  /// wakeUpPrinter() - Wake printer from sleep/idle state
+  /// Usage: Call before first print to avoid blank paper on first print
+  Future<dynamic> wakeUpPrinter() => _channel.invokeMethod('wakeUpPrinter');
+
+  /// writeBytesWithWakeUp() - Print with auto wake-up
+  /// Usage: Use instead of writeBytes() to fix blank paper on first print
+  Future<dynamic> writeBytesWithWakeUp(Uint8List message) =>
+      _channel.invokeMethod('writeBytesWithWakeUp', {'message': message});
+
+  /// writeBytesReliable() - Reliable print for large data (RECOMMENDED for receipts)
+  /// Usage: Use for long receipts (shop info + product list) to ensure complete printing
+  /// Note: Slower but guarantees all data is printed without cut-off
+  Future<dynamic> writeBytesReliable(Uint8List message) =>
+      _channel.invokeMethod('writeBytesReliable', {'message': message});
 }
 
 class BluetoothDevice {

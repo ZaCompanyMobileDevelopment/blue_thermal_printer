@@ -450,6 +450,36 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
         }
         break;
 
+      case "clearBuffer":
+        clearBuffer(result);
+        break;
+
+      case "clearAfterPrint":
+        clearAfterPrint(result);
+        break;
+
+      case "wakeUpPrinter":
+        wakeUpPrinter(result);
+        break;
+
+      case "writeBytesWithWakeUp":
+        if (arguments.containsKey("message")) {
+          byte[] message = (byte[]) arguments.get("message");
+          writeBytesWithWakeUp(result, message);
+        } else {
+          result.error("invalid_argument", "argument 'message' not found", null);
+        }
+        break;
+
+      case "writeBytesReliable":
+        if (arguments.containsKey("message")) {
+          byte[] message = (byte[]) arguments.get("message");
+          writeBytesReliable(result, message);
+        } else {
+          result.error("invalid_argument", "argument 'message' not found", null);
+        }
+        break;
+
       case "printReceiptGP1324D":
         if (arguments.containsKey("content")) {
           String content = (String) arguments.get("content");
@@ -622,6 +652,9 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
     }
     AsyncTask.execute(() -> {
       try {
+        // Clear buffer before disconnecting to prevent white paper on next power-on
+        clearBufferBeforeDisconnect();
+
         THREAD.cancel();
         THREAD = null;
         result.success(true);
@@ -1055,26 +1088,404 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
   private boolean finalizePrinterOutput() {
     try {
       Log.d(TAG, "Finalizing printer output");
-      
+
       // Send command to ensure all data is printed and buffer is flushed
       byte[] finalizeSequence = {
         0x0A,             // LF - Line feed to ensure last line prints
         0x1B, 0x64, 0x02  // ESC d n - Feed n lines (2 lines for spacing)
       };
-      
+
       synchronized (THREAD.outputStream) {
         THREAD.outputStream.write(finalizeSequence);
         THREAD.outputStream.flush();
       }
-      
+
       // Wait for final commands to process
       Thread.sleep(100);
-      
+
       Log.d(TAG, "Printer output finalization completed");
       return true;
-      
+
     } catch (Exception e) {
       Log.e(TAG, "Printer output finalization failed: " + e.getMessage(), e);
+      return false;
+    }
+  }
+
+  /**
+   * wakeUpPrinter() - Wake printer from sleep/idle state
+   * Usage: Call before first print to avoid blank paper on first print
+   */
+  private void wakeUpPrinter(Result result) {
+    if (THREAD == null) {
+      result.error("write_error", "not connected", null);
+      return;
+    }
+
+    AsyncTask.execute(() -> {
+      try {
+        Log.d(TAG, "Waking up printer");
+
+        // Wake-up sequence: multiple init commands to ensure printer is ready
+        byte[] wakeUpSequence = {
+          0x00,             // NUL - Wake signal
+          0x00,             // NUL - Wake signal
+          0x1B, 0x40,       // ESC @ - Initialize printer
+          0x1B, 0x3D, 0x01, // ESC = 1 - Select printer (online)
+        };
+
+        synchronized (THREAD.outputStream) {
+          THREAD.outputStream.write(wakeUpSequence);
+          THREAD.outputStream.flush();
+        }
+
+        // Wait for printer to wake up
+        Thread.sleep(PRINTER_WAKE_DELAY_MS); // 500ms
+
+        // Send second init to confirm printer is ready
+        byte[] confirmReady = {
+          0x1B, 0x40,       // ESC @ - Initialize again
+          0x1B, 0x21, 0x00, // ESC ! - Reset font
+        };
+
+        synchronized (THREAD.outputStream) {
+          THREAD.outputStream.write(confirmReady);
+          THREAD.outputStream.flush();
+        }
+
+        Thread.sleep(200);
+
+        Log.d(TAG, "Printer wake-up completed");
+        result.success(true);
+
+      } catch (Exception ex) {
+        Log.e(TAG, "Wake up printer failed: " + ex.getMessage(), ex);
+        result.error("write_error", "Wake up failed: " + ex.getMessage(), null);
+      }
+    });
+  }
+
+  /**
+   * writeBytesWithWakeUp() - Print with auto wake-up
+   * Usage: Use instead of writeBytes() to avoid blank paper on first print
+   */
+  private void writeBytesWithWakeUp(Result result, byte[] message) {
+    if (THREAD == null) {
+      result.error("write_error", "not connected", null);
+      return;
+    }
+
+    if (message == null || message.length == 0) {
+      result.error("write_error", "message is null or empty", null);
+      return;
+    }
+
+    AsyncTask.execute(() -> {
+      try {
+        Log.d(TAG, "WriteBytesWithWakeUp starting, data length: " + message.length);
+
+        // Step 1: Wake up printer first
+        byte[] wakeUpSequence = {
+          0x00,             // NUL - Wake signal
+          0x00,             // NUL - Wake signal
+          0x1B, 0x40,       // ESC @ - Initialize printer
+          0x1B, 0x3D, 0x01, // ESC = 1 - Select printer (online)
+        };
+
+        synchronized (THREAD.outputStream) {
+          THREAD.outputStream.write(wakeUpSequence);
+          THREAD.outputStream.flush();
+        }
+
+        // Wait for printer to wake up
+        Thread.sleep(PRINTER_WAKE_DELAY_MS); // 500ms
+
+        // Step 2: Initialize printer for printing
+        byte[] initSequence = {
+          0x1B, 0x40,       // ESC @ - Initialize printer
+          0x1B, 0x21, 0x00, // ESC ! - Reset font
+          0x1B, 0x61, 0x00, // ESC a - Left align
+        };
+
+        synchronized (THREAD.outputStream) {
+          THREAD.outputStream.write(initSequence);
+          THREAD.outputStream.flush();
+        }
+
+        Thread.sleep(100);
+
+        // Step 3: Write actual data
+        if (!writeDataInChunksFast(message)) {
+          result.error("write_error", "Failed to write data", null);
+          return;
+        }
+
+        Log.d(TAG, "WriteBytesWithWakeUp completed successfully");
+        result.success(true);
+
+      } catch (Exception ex) {
+        Log.e(TAG, "WriteBytesWithWakeUp failed: " + ex.getMessage(), ex);
+        result.error("write_error", "Write with wake-up failed: " + ex.getMessage(), null);
+      }
+    });
+  }
+
+  /**
+   * writeBytesReliable() - BEST version for complete receipt printing
+   * Fix: Shop info + product list prints completely without white paper
+   * Features: Auto wake, flow control, retry on fail, smart delays
+   */
+  private void writeBytesReliable(Result result, byte[] message) {
+    if (THREAD == null) {
+      result.error("write_error", "not connected", null);
+      return;
+    }
+
+    if (message == null || message.length == 0) {
+      result.error("write_error", "message is null or empty", null);
+      return;
+    }
+
+    AsyncTask.execute(() -> {
+      try {
+        int totalBytes = message.length;
+        Log.d(TAG, "WriteBytesReliable V2 starting, data length: " + totalBytes);
+
+        // ========== STEP 1: STRONG WAKE UP ==========
+        for (int i = 0; i < 3; i++) {  // Send wake signal 3 times
+          byte[] wakeUp = {0x00, 0x00, 0x1B, 0x40};
+          synchronized (THREAD.outputStream) {
+            THREAD.outputStream.write(wakeUp);
+            THREAD.outputStream.flush();
+          }
+          Thread.sleep(100);
+        }
+        Thread.sleep(300);  // Wait for printer to fully wake
+
+        // ========== STEP 2: INITIALIZE PRINTER ==========
+        byte[] initSequence = {
+          0x1B, 0x40,             // ESC @ - Reset printer
+          0x1B, 0x21, 0x00,       // ESC ! - Normal font
+          0x1B, 0x61, 0x00,       // ESC a - Left align
+          0x1B, 0x32,             // ESC 2 - Default line spacing
+          0x1B, 0x4D, 0x00,       // ESC M - Standard font
+          0x1D, 0x21, 0x00,       // GS ! - Normal size
+        };
+
+        synchronized (THREAD.outputStream) {
+          THREAD.outputStream.write(initSequence);
+          THREAD.outputStream.flush();
+        }
+        Thread.sleep(150);
+
+        // ========== STEP 3: SMART CHUNKED WRITE ==========
+        int chunkSize = 64;       // Very small for maximum reliability
+        int bytesWritten = 0;
+        int retryCount = 0;
+        int maxRetries = 3;
+
+        while (bytesWritten < totalBytes) {
+          // Connection check
+          if (THREAD == null || THREAD.outputStream == null || !THREAD.mmSocket.isConnected()) {
+            result.error("write_error", "Connection lost at " + bytesWritten + "/" + totalBytes, null);
+            return;
+          }
+
+          int currentChunkSize = Math.min(chunkSize, totalBytes - bytesWritten);
+          byte[] chunk = new byte[currentChunkSize];
+          System.arraycopy(message, bytesWritten, chunk, 0, currentChunkSize);
+
+          try {
+            synchronized (THREAD.outputStream) {
+              THREAD.outputStream.write(chunk);
+              THREAD.outputStream.flush();
+            }
+
+            bytesWritten += currentChunkSize;
+            retryCount = 0;  // Reset retry on success
+
+            // Smart delay based on data size
+            if (totalBytes > 5000) {
+              Thread.sleep(100);  // Large receipt: 100ms delay
+            } else if (totalBytes > 2000) {
+              Thread.sleep(70);   // Medium receipt: 70ms delay
+            } else {
+              Thread.sleep(50);   // Small receipt: 50ms delay
+            }
+
+            // Extra buffer clear time every 512 bytes
+            if (bytesWritten % 512 == 0) {
+              Thread.sleep(150);
+              Log.d(TAG, "Progress: " + bytesWritten + "/" + totalBytes + " (" + (bytesWritten * 100 / totalBytes) + "%)");
+            }
+
+          } catch (IOException e) {
+            retryCount++;
+            Log.w(TAG, "Chunk write failed, retry " + retryCount + "/" + maxRetries);
+
+            if (retryCount >= maxRetries) {
+              result.error("write_error", "Failed after " + maxRetries + " retries at " + bytesWritten + " bytes", null);
+              return;
+            }
+
+            Thread.sleep(200);  // Wait before retry
+            // Don't increment bytesWritten, will retry same chunk
+          }
+        }
+
+        // ========== STEP 4: ENSURE COMPLETE PRINT ==========
+        Thread.sleep(500);  // Wait for buffer to process
+
+        // Send "print complete" signal
+        byte[] completeSignal = {
+          0x1B, 0x4A, 0x00,  // ESC J 0 - Print buffer (no feed)
+          0x1B, 0x40,        // ESC @ - Reset (clears any remaining buffer)
+        };
+
+        synchronized (THREAD.outputStream) {
+          THREAD.outputStream.write(completeSignal);
+          THREAD.outputStream.flush();
+        }
+
+        Thread.sleep(300);
+
+        Log.d(TAG, "WriteBytesReliable V2 completed: " + totalBytes + " bytes printed successfully");
+        result.success(true);
+
+      } catch (Exception ex) {
+        Log.e(TAG, "WriteBytesReliable V2 failed: " + ex.getMessage(), ex);
+        result.error("write_error", "Print failed: " + ex.getMessage(), null);
+      }
+    });
+  }
+
+  /**
+   * clearBuffer() - Fix white paper on power-on issue
+   * Usage: Call after connect() to clear residual data
+   */
+  private void clearBuffer(Result result) {
+    if (THREAD == null) {
+      result.error("write_error", "not connected", null);
+      return;
+    }
+
+    AsyncTask.execute(() -> {
+      try {
+        Log.d(TAG, "Clearing printer buffer");
+
+        // Comprehensive buffer clear sequence
+        byte[] clearSequence = {
+          0x18,             // CAN - Cancel (clear print buffer immediately)
+          0x1B, 0x40,       // ESC @ - Initialize printer (reset to default state)
+          0x18,             // CAN - Cancel again for thorough clearing
+          0x1B, 0x3D, 0x01, // ESC = 1 - Select printer (ensure printer is ready)
+        };
+
+        synchronized (THREAD.outputStream) {
+          THREAD.outputStream.write(clearSequence);
+          THREAD.outputStream.flush();
+        }
+
+        // Wait for printer to process clear commands
+        Thread.sleep(200);
+
+        // Send another reset to ensure clean state
+        byte[] resetSequence = {
+          0x1B, 0x40,       // ESC @ - Initialize printer again
+          0x1B, 0x21, 0x00, // ESC ! - Reset font to normal
+          0x1B, 0x61, 0x00, // ESC a - Reset alignment to left
+        };
+
+        synchronized (THREAD.outputStream) {
+          THREAD.outputStream.write(resetSequence);
+          THREAD.outputStream.flush();
+        }
+
+        Thread.sleep(100);
+
+        Log.d(TAG, "Printer buffer cleared successfully");
+        result.success(true);
+
+      } catch (Exception ex) {
+        Log.e(TAG, "Clear buffer failed: " + ex.getMessage(), ex);
+        result.error("write_error", "Clear buffer failed: " + ex.getMessage(), null);
+      }
+    });
+  }
+
+  /**
+   * clearAfterPrint() - Clear buffer after print job
+   * Usage: Call after printing to prevent data residue on next power cycle
+   */
+  private void clearAfterPrint(Result result) {
+    if (THREAD == null) {
+      result.error("write_error", "not connected", null);
+      return;
+    }
+
+    AsyncTask.execute(() -> {
+      try {
+        Log.d(TAG, "Clearing printer after print job");
+
+        // Post-print clear sequence
+        byte[] postPrintClear = {
+          0x18,             // CAN - Cancel any pending data
+          0x0C,             // FF - Form feed (flush any remaining buffer)
+          0x1B, 0x40,       // ESC @ - Initialize/reset printer
+          0x18,             // CAN - Cancel again
+        };
+
+        synchronized (THREAD.outputStream) {
+          THREAD.outputStream.write(postPrintClear);
+          THREAD.outputStream.flush();
+        }
+
+        // Wait for printer to process
+        Thread.sleep(150);
+
+        Log.d(TAG, "Post-print buffer clear completed");
+        result.success(true);
+
+      } catch (Exception ex) {
+        Log.e(TAG, "Clear after print failed: " + ex.getMessage(), ex);
+        result.error("write_error", "Clear after print failed: " + ex.getMessage(), null);
+      }
+    });
+  }
+
+  /**
+   * Auto-clear buffer before disconnect (internal)
+   * Note: Called automatically by disconnect() - no manual call needed
+   */
+  private boolean clearBufferBeforeDisconnect() {
+    try {
+      if (THREAD == null || THREAD.outputStream == null) {
+        return false;
+      }
+
+      Log.d(TAG, "Clearing buffer before disconnect");
+
+      // Clear sequence before disconnecting
+      byte[] disconnectClear = {
+        0x18,             // CAN - Cancel any pending print data
+        0x1B, 0x40,       // ESC @ - Reset printer state
+        0x18,             // CAN - Cancel again
+        0x0C,             // FF - Form feed to flush buffer
+      };
+
+      synchronized (THREAD.outputStream) {
+        THREAD.outputStream.write(disconnectClear);
+        THREAD.outputStream.flush();
+      }
+
+      // Wait for commands to be processed
+      Thread.sleep(200);
+
+      Log.d(TAG, "Buffer cleared before disconnect");
+      return true;
+
+    } catch (Exception e) {
+      Log.e(TAG, "Clear before disconnect failed: " + e.getMessage(), e);
       return false;
     }
   }
