@@ -1,13 +1,12 @@
 #!/bin/sh
 # This is a generated file; do not edit or check into version control.
-export "FLUTTER_ROOT=/Users/laelaewin/development/flutter"
-export "FLUTTER_APPLICATION_PATH=/Users/laelaewin/Flutter_Project/blue_thermal_printer/example"
+export "FLUTTER_ROOT=/Users/zacompany/develop/flutter"
+export "FLUTTER_APPLICATION_PATH=/Users/zacompany/flutter_project/blue_thermal_printer/example"
 export "COCOAPODS_PARALLEL_CODE_SIGN=true"
 export "FLUTTER_TARGET=lib/main.dart"
 export "FLUTTER_BUILD_DIR=build"
 export "FLUTTER_BUILD_NAME=1.0.0"
 export "FLUTTER_BUILD_NUMBER=1"
-export "FLUTTER_CLI_BUILD_MODE=debug"
 export "DART_OBFUSCATION=false"
 export "TRACK_WIDGET_CREATION=true"
 export "TREE_SHAKE_ICONS=false"

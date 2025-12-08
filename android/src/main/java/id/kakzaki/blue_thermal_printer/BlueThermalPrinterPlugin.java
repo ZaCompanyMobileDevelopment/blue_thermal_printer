@@ -1230,10 +1230,140 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
     });
   }
 
+  // /**
+  //  * writeBytesReliable() - BEST version for complete receipt printing
+  //  * Fix: Shop info + product list prints completely without white paper
+  //  * Features: Auto wake, flow control, retry on fail, smart delays
+  //  */
+  // private void writeBytesReliable(Result result, byte[] message) {
+  //   if (THREAD == null) {
+  //     result.error("write_error", "not connected", null);
+  //     return;
+  //   }
+
+  //   if (message == null || message.length == 0) {
+  //     result.error("write_error", "message is null or empty", null);
+  //     return;
+  //   }
+
+  //   AsyncTask.execute(() -> {
+  //     try {
+  //       int totalBytes = message.length;
+  //       Log.d(TAG, "WriteBytesReliable V2 starting, data length: " + totalBytes);
+
+  //       // ========== STEP 1: STRONG WAKE UP ==========
+  //       for (int i = 0; i < 3; i++) {  // Send wake signal 3 times
+  //         byte[] wakeUp = {0x00, 0x00, 0x1B, 0x40};
+  //         synchronized (THREAD.outputStream) {
+  //           THREAD.outputStream.write(wakeUp);
+  //           THREAD.outputStream.flush();
+  //         }
+  //         Thread.sleep(100);
+  //       }
+  //       Thread.sleep(300);  // Wait for printer to fully wake
+
+  //       // ========== STEP 2: INITIALIZE PRINTER ==========
+  //       byte[] initSequence = {
+  //         0x1B, 0x40,             // ESC @ - Reset printer
+  //         0x1B, 0x21, 0x00,       // ESC ! - Normal font
+  //         0x1B, 0x61, 0x00,       // ESC a - Left align
+  //         0x1B, 0x32,             // ESC 2 - Default line spacing
+  //         0x1B, 0x4D, 0x00,       // ESC M - Standard font
+  //         0x1D, 0x21, 0x00,       // GS ! - Normal size
+  //       };
+
+  //       synchronized (THREAD.outputStream) {
+  //         THREAD.outputStream.write(initSequence);
+  //         THREAD.outputStream.flush();
+  //       }
+  //       Thread.sleep(150);
+
+  //       // ========== STEP 3: SMART CHUNKED WRITE ==========
+  //       int chunkSize = 64;       // Very small for maximum reliability
+  //       int bytesWritten = 0;
+  //       int retryCount = 0;
+  //       int maxRetries = 3;
+
+  //       while (bytesWritten < totalBytes) {
+  //         // Connection check
+  //         if (THREAD == null || THREAD.outputStream == null || !THREAD.mmSocket.isConnected()) {
+  //           result.error("write_error", "Connection lost at " + bytesWritten + "/" + totalBytes, null);
+  //           return;
+  //         }
+
+  //         int currentChunkSize = Math.min(chunkSize, totalBytes - bytesWritten);
+  //         byte[] chunk = new byte[currentChunkSize];
+  //         System.arraycopy(message, bytesWritten, chunk, 0, currentChunkSize);
+
+  //         try {
+  //           synchronized (THREAD.outputStream) {
+  //             THREAD.outputStream.write(chunk);
+  //             THREAD.outputStream.flush();
+  //           }
+
+  //           bytesWritten += currentChunkSize;
+  //           retryCount = 0;  // Reset retry on success
+
+  //           // Smart delay based on data size
+  //           if (totalBytes > 5000) {
+  //             Thread.sleep(100);  // Large receipt: 100ms delay
+  //           } else if (totalBytes > 2000) {
+  //             Thread.sleep(70);   // Medium receipt: 70ms delay
+  //           } else {
+  //             Thread.sleep(50);   // Small receipt: 50ms delay
+  //           }
+
+  //           // Extra buffer clear time every 512 bytes
+  //           if (bytesWritten % 512 == 0) {
+  //             Thread.sleep(150);
+  //             Log.d(TAG, "Progress: " + bytesWritten + "/" + totalBytes + " (" + (bytesWritten * 100 / totalBytes) + "%)");
+  //           }
+
+  //         } catch (IOException e) {
+  //           retryCount++;
+  //           Log.w(TAG, "Chunk write failed, retry " + retryCount + "/" + maxRetries);
+
+  //           if (retryCount >= maxRetries) {
+  //             result.error("write_error", "Failed after " + maxRetries + " retries at " + bytesWritten + " bytes", null);
+  //             return;
+  //           }
+
+  //           Thread.sleep(200);  // Wait before retry
+  //           // Don't increment bytesWritten, will retry same chunk
+  //         }
+  //       }
+
+  //       // ========== STEP 4: ENSURE COMPLETE PRINT ==========
+  //       Thread.sleep(500);  // Wait for buffer to process
+
+  //       // Send "print complete" signal
+  //       byte[] completeSignal = {
+  //         0x1B, 0x4A, 0x00,  // ESC J 0 - Print buffer (no feed)
+  //         0x1B, 0x40,        // ESC @ - Reset (clears any remaining buffer)
+  //       };
+
+  //       synchronized (THREAD.outputStream) {
+  //         THREAD.outputStream.write(completeSignal);
+  //         THREAD.outputStream.flush();
+  //       }
+
+  //       Thread.sleep(300);
+
+  //       Log.d(TAG, "WriteBytesReliable V2 completed: " + totalBytes + " bytes printed successfully");
+  //       result.success(true);
+
+  //     } catch (Exception ex) {
+  //       Log.e(TAG, "WriteBytesReliable V2 failed: " + ex.getMessage(), ex);
+  //       result.error("write_error", "Print failed: " + ex.getMessage(), null);
+  //     }
+  //   });
+  // }
+  // ...existing code...
+
+  
   /**
-   * writeBytesReliable() - BEST version for complete receipt printing
-   * Fix: Shop info + product list prints completely without white paper
-   * Features: Auto wake, flow control, retry on fail, smart delays
+   * writeBytesReliable() - faster/duration-optimized version
+   * Goal: reduce waiting time while keeping reliability for first-print
    */
   private void writeBytesReliable(Result result, byte[] message) {
     if (THREAD == null) {
@@ -1249,111 +1379,50 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
     AsyncTask.execute(() -> {
       try {
         int totalBytes = message.length;
-        Log.d(TAG, "WriteBytesReliable V2 starting, data length: " + totalBytes);
+        Log.d(TAG, "WriteBytesReliable (fast) starting, bytes: " + totalBytes);
 
-        // ========== STEP 1: STRONG WAKE UP ==========
-        for (int i = 0; i < 3; i++) {  // Send wake signal 3 times
-          byte[] wakeUp = {0x00, 0x00, 0x1B, 0x40};
+        // STEP 1: Single wake sequence (faster) + short settle
+        try {
+          byte[] wakeUp = {0x00, 0x1B, 0x40}; // NUL + ESC @
           synchronized (THREAD.outputStream) {
             THREAD.outputStream.write(wakeUp);
             THREAD.outputStream.flush();
           }
-          Thread.sleep(100);
-        }
-        Thread.sleep(300);  // Wait for printer to fully wake
-
-        // ========== STEP 2: INITIALIZE PRINTER ==========
-        byte[] initSequence = {
-          0x1B, 0x40,             // ESC @ - Reset printer
-          0x1B, 0x21, 0x00,       // ESC ! - Normal font
-          0x1B, 0x61, 0x00,       // ESC a - Left align
-          0x1B, 0x32,             // ESC 2 - Default line spacing
-          0x1B, 0x4D, 0x00,       // ESC M - Standard font
-          0x1D, 0x21, 0x00,       // GS ! - Normal size
-        };
-
-        synchronized (THREAD.outputStream) {
-          THREAD.outputStream.write(initSequence);
-          THREAD.outputStream.flush();
-        }
-        Thread.sleep(150);
-
-        // ========== STEP 3: SMART CHUNKED WRITE ==========
-        int chunkSize = 64;       // Very small for maximum reliability
-        int bytesWritten = 0;
-        int retryCount = 0;
-        int maxRetries = 3;
-
-        while (bytesWritten < totalBytes) {
-          // Connection check
-          if (THREAD == null || THREAD.outputStream == null || !THREAD.mmSocket.isConnected()) {
-            result.error("write_error", "Connection lost at " + bytesWritten + "/" + totalBytes, null);
-            return;
-          }
-
-          int currentChunkSize = Math.min(chunkSize, totalBytes - bytesWritten);
-          byte[] chunk = new byte[currentChunkSize];
-          System.arraycopy(message, bytesWritten, chunk, 0, currentChunkSize);
-
-          try {
-            synchronized (THREAD.outputStream) {
-              THREAD.outputStream.write(chunk);
-              THREAD.outputStream.flush();
-            }
-
-            bytesWritten += currentChunkSize;
-            retryCount = 0;  // Reset retry on success
-
-            // Smart delay based on data size
-            if (totalBytes > 5000) {
-              Thread.sleep(100);  // Large receipt: 100ms delay
-            } else if (totalBytes > 2000) {
-              Thread.sleep(70);   // Medium receipt: 70ms delay
-            } else {
-              Thread.sleep(50);   // Small receipt: 50ms delay
-            }
-
-            // Extra buffer clear time every 512 bytes
-            if (bytesWritten % 512 == 0) {
-              Thread.sleep(150);
-              Log.d(TAG, "Progress: " + bytesWritten + "/" + totalBytes + " (" + (bytesWritten * 100 / totalBytes) + "%)");
-            }
-
-          } catch (IOException e) {
-            retryCount++;
-            Log.w(TAG, "Chunk write failed, retry " + retryCount + "/" + maxRetries);
-
-            if (retryCount >= maxRetries) {
-              result.error("write_error", "Failed after " + maxRetries + " retries at " + bytesWritten + " bytes", null);
-              return;
-            }
-
-            Thread.sleep(200);  // Wait before retry
-            // Don't increment bytesWritten, will retry same chunk
-          }
+          Thread.sleep(100); // reduced from longer waits
+        } catch (Exception e) {
+          Log.w(TAG, "Wake attempt failed (non-fatal): " + e.getMessage());
         }
 
-        // ========== STEP 4: ENSURE COMPLETE PRINT ==========
-        Thread.sleep(500);  // Wait for buffer to process
-
-        // Send "print complete" signal
-        byte[] completeSignal = {
-          0x1B, 0x4A, 0x00,  // ESC J 0 - Print buffer (no feed)
-          0x1B, 0x40,        // ESC @ - Reset (clears any remaining buffer)
-        };
-
-        synchronized (THREAD.outputStream) {
-          THREAD.outputStream.write(completeSignal);
-          THREAD.outputStream.flush();
+        // STEP 2: Fast initialization using existing helper (shorter delay)
+        if (!initializePrinterForWriteBytes()) {
+          // fallback: try minimal init to avoid blocking long
+          initializePrinterFast();
         }
 
-        Thread.sleep(300);
+        // STEP 3: Attempt enhanced chunked write (preferred)
+        boolean ok = writeDataInChunksWithRecovery(message);
 
-        Log.d(TAG, "WriteBytesReliable V2 completed: " + totalBytes + " bytes printed successfully");
+        // If enhanced write fails, fallback to standard chunked write (faster chunking)
+        if (!ok) {
+          Log.w(TAG, "Enhanced write failed, attempting standard chunked write");
+          ok = writeDataInChunks(message);
+        }
+
+        if (!ok) {
+          result.error("write_error", "Failed to write data", null);
+          return;
+        }
+
+        // STEP 4: Short finalize to ensure printer prints buffer
+        finalizePrinterOutput(); // short waits inside helper
+
+        // Small post-final delay (reduced)
+        Thread.sleep(120);
+
+        Log.d(TAG, "WriteBytesReliable (fast) completed: " + totalBytes + " bytes");
         result.success(true);
-
       } catch (Exception ex) {
-        Log.e(TAG, "WriteBytesReliable V2 failed: " + ex.getMessage(), ex);
+        Log.e(TAG, "WriteBytesReliable (fast) failed: " + ex.getMessage(), ex);
         result.error("write_error", "Print failed: " + ex.getMessage(), null);
       }
     });
