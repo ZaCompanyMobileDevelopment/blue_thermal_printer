@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/blue_thermal_printer.iml" filepath="$PROJECT_DIR$/blue_thermal_printer.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/blue_thermal_printer.iml" filepath="$PROJECT_DIR$/.idea/blue_thermal_printer.iml" />
     </modules>
   </component>
 </project>
