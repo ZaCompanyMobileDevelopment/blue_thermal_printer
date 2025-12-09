@@ -203,7 +203,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
 
   @Override
   public void onMethodCall(@NonNull MethodCall call, @NonNull Result rawResult) {
-    Log.d(TAG,"onMethodCall......."+message.length);
+    Log.d(TAG,"onMethodCall.......");
     Result result = new MethodResultWrapper(rawResult);
 
     if (mBluetoothAdapter == null && !"isAvailable".equals(call.method)) {
@@ -569,7 +569,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
    * @param address address
    */
   private void isDeviceConnected(Result result, String address) {
-     Log.d(TAG,"isDeviceConnected......."+message.length);
+     Log.d(TAG,"isDeviceConnected.......");
 
     AsyncTask.execute(() -> {
       try {
@@ -660,7 +660,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
    * @param result result
    */
   private void disconnect(Result result) {
-   Log.d(TAG,"disconnect......."+message.length);
+   Log.d(TAG,"disconnect.......");
 
     if (THREAD == null) {
       result.error("disconnection_error", "not connected", null);
@@ -950,7 +950,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
   }
 
   private boolean writeDataInChunks(byte[] data) {
-     Log.d(TAG,"writeDataInChunks......."+message.length);
+     Log.d(TAG,"writeDataInChunks.......");
     try {
       int totalBytes = data.length;
       int bytesWritten = 0;
@@ -994,7 +994,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
   }
   
   private boolean writeDataInChunksWithRecovery(byte[] data) {
-    Log.d(TAG,"writeDataInChunksWithRecovery......."+message.length);
+    Log.d(TAG,"writeDataInChunksWithRecovery.......");
     try {
       int totalBytes = data.length;
       int bytesWritten = 0;
@@ -1063,7 +1063,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
   }
   
   private boolean isConnectionHealthy() {
-     Log.d(TAG,"isConnectionHealthy......."+message.length);
+     Log.d(TAG,"isConnectionHealthy.......");
     try {
       return THREAD != null && 
              THREAD.mmSocket != null && 
@@ -1076,7 +1076,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
   }
   
   private boolean isConnectionHealthyWithRecovery() {
- Log.d(TAG,"isConnectionHealthyWithRecovery......."+message.length);
+ Log.d(TAG,"isConnectionHealthyWithRecovery.......");
     try {
       if (THREAD == null || THREAD.mmSocket == null || THREAD.outputStream == null) {
         Log.w(TAG, "Connection components are null");
