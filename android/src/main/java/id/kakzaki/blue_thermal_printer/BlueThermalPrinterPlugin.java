@@ -605,7 +605,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
    * @param address address
    */
   private void connect(Result result, String address) {
-     Log.d(TAG,"connect......."+message.length);
+     Log.d(TAG,"connect.......");
 
     if (THREAD != null) {
       result.error("connect_error", "already connected", null);
@@ -687,7 +687,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
    * @param message message
    */
   private void write(Result result, String message) {
-     Log.d(TAG,"write......."+message.length);
+     Log.d(TAG,"write.......");
     if (THREAD == null) {
       result.error("write_error", "not connected", null);
       return;
