@@ -80,6 +80,8 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
   private static final int FAST_CHUNK_SIZE = 4096; // Larger chunks for better throughput
   private static final int FAST_CHUNK_DELAY_MS = 15; // Minimal chunk delay
   private static final int FAST_INIT_DELAY_MS = 30; // Quick initialization
+  private boolean printedSinceConnect = false; // mark whether any successful print happened since the last connect
+  private static final int FIRST_PRINT_WAKE_DELAY_MS = 120; // small delay used only for first-print quick wake/pre-feed (tune if needed)
   
   private static ConnectedThread THREAD = null;
   private BluetoothAdapter mBluetoothAdapter;
@@ -629,6 +631,16 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
           socket.connect();
           THREAD = new ConnectedThread(socket);
           THREAD.start();
+          printedSinceConnect = false;// Reset printed flag for new connection
+// Best-effort quick pre-feed to clear sleep/residual state (non-blocking / best-effort)
+        try {
+         byte[] quickPreFeed = {0x00, 0x0A}; // NUL + LF
+        synchronized (THREAD.outputStream) {
+           THREAD.outputStream.write(quickPreFeed);
+           THREAD.outputStream.flush();
+         }
+       } catch (Exception ignored) {}
+
           result.success(true);
         } catch (Exception ex) {
           Log.e(TAG, ex.getMessage(), ex);
@@ -657,6 +669,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
 
         THREAD.cancel();
         THREAD = null;
+        printedSinceConnect = false;
         result.success(true);
       } catch (Exception ex) {
         Log.e(TAG, ex.getMessage(), ex);
@@ -684,13 +697,26 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
     }
   }
     private void  defaultWriteBytes(Result result, byte[] message) {
+
     if (THREAD == null) {
       result.error("write_error", "not connected", null);
       return;
     }
 
     try {
+                  // first-print quick wake if needed
+     if (!printedSinceConnect) {
+        try {
+         byte[] wakeAndFeed = {0x00, 0x1B, 0x40, 0x0A};
+         synchronized (THREAD.outputStream) {
+           THREAD.outputStream.write(wakeAndFeed);
+            THREAD.outputStream.flush();
+          }
+          Thread.sleep(FIRST_PRINT_WAKE_DELAY_MS);
+       } catch (Exception ignored) {}
+   }
       THREAD.write(message);
+      printedSinceConnect = true;
       result.success(true);
     } catch (Exception ex) {
       Log.e(TAG, ex.getMessage(), ex);
@@ -710,6 +736,17 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
     }
 
     AsyncTask.execute(() -> {
+           // first-print quick wake if needed
+     if (!printedSinceConnect) {
+       try {
+         byte[] wakeAndFeed = {0x00, 0x1B, 0x40, 0x0A};
+         synchronized (THREAD.outputStream) {
+           THREAD.outputStream.write(wakeAndFeed);
+           THREAD.outputStream.flush();
+         }
+       Thread.sleep(FIRST_PRINT_WAKE_DELAY_MS);
+      } catch (Exception ignored) {}
+    }
       boolean success = false;
       String errorMessage = "";
       
@@ -732,6 +769,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
           
           if (success) {
             Log.d(TAG, "FastWriteBytes successful on attempt " + attempt);
+             printedSinceConnect = true;
             result.success(true);
             return;
           }
@@ -1183,6 +1221,17 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
     AsyncTask.execute(() -> {
       try {
         Log.d(TAG, "WriteBytesWithWakeUp starting, data length: " + message.length);
+          // Very short pre-wake only for the first print after connect
+    if (!printedSinceConnect) {
+      try {
+        byte[] quickPre = {0x00, 0x0A};
+        synchronized (THREAD.outputStream) {
+          THREAD.outputStream.write(quickPre);
+          THREAD.outputStream.flush();
+        }
+        Thread.sleep(60);
+      } catch (Exception ignored) {}
+    }
 
         // Step 1: Wake up printer first
         byte[] wakeUpSequence = {
@@ -1221,6 +1270,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
         }
 
         Log.d(TAG, "WriteBytesWithWakeUp completed successfully");
+        printedSinceConnect = true;
         result.success(true);
 
       } catch (Exception ex) {
@@ -1360,12 +1410,12 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
   // }
   // ...existing code...
 
-  
+
   /**
    * writeBytesReliable() - faster/duration-optimized version
    * Goal: reduce waiting time while keeping reliability for first-print
    */
-  private void writeBytesReliable(Result result, byte[] message) {
+    private void writeBytesReliable(Result result, byte[] message) {
     if (THREAD == null) {
       result.error("write_error", "not connected", null);
       return;
@@ -1380,29 +1430,53 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
       try {
         int totalBytes = message.length;
         Log.d(TAG, "WriteBytesReliable (fast) starting, bytes: " + totalBytes);
+           // Quick first-print wake/pre-feed when needed (keeps this method fast)
+   if (!printedSinceConnect) {
+     try {
+       byte[] wakeAndFeed = {0x00, 0x1B, 0x40, 0x0A}; // NUL, ESC @, LF
+       synchronized (THREAD.outputStream) {
+         THREAD.outputStream.write(wakeAndFeed);
+         THREAD.outputStream.flush();
+       }
+       Thread.sleep(FIRST_PRINT_WAKE_DELAY_MS);
+     } catch (Exception e) {
+       Log.w(TAG, "WriteBytesReliable first-print wake failed (non-fatal): " + e.getMessage());
+     }
+   }
 
-        // STEP 1: Single wake sequence (faster) + short settle
+        // FAST WAKE + SHORT PRE-FEED (one shot)
         try {
-          byte[] wakeUp = {0x00, 0x1B, 0x40}; // NUL + ESC @
+          byte[] wakeAndFeed = {0x00, 0x1B, 0x40, 0x0A}; // NUL, ESC @, LF
           synchronized (THREAD.outputStream) {
-            THREAD.outputStream.write(wakeUp);
+            THREAD.outputStream.write(wakeAndFeed);
             THREAD.outputStream.flush();
           }
-          Thread.sleep(100); // reduced from longer waits
         } catch (Exception e) {
-          Log.w(TAG, "Wake attempt failed (non-fatal): " + e.getMessage());
+          Log.w(TAG, "Fast wake/pre-feed failed (non-fatal): " + e.getMessage());
         }
 
-        // STEP 2: Fast initialization using existing helper (shorter delay)
-        if (!initializePrinterForWriteBytes()) {
-          // fallback: try minimal init to avoid blocking long
-          initializePrinterFast();
+        // Short settle — tuned to be minimal but often sufficient
+        try {
+          Thread.sleep(90);
+        } catch (InterruptedException ignored) {}
+
+        // Try printer init quickly; fall back to minimal inline init if helper fails
+        boolean initOk = initializePrinterForWriteBytes();
+        if (!initOk) {
+          try {
+            byte[] quickInit = {0x1B, 0x40}; // ESC @
+            synchronized (THREAD.outputStream) {
+              THREAD.outputStream.write(quickInit);
+              THREAD.outputStream.flush();
+            }
+            Thread.sleep(60);
+          } catch (Exception ignored) {}
         }
 
-        // STEP 3: Attempt enhanced chunked write (preferred)
+        // PREFERRED: use recovery-capable chunked writer (should be efficient)
         boolean ok = writeDataInChunksWithRecovery(message);
 
-        // If enhanced write fails, fallback to standard chunked write (faster chunking)
+        // FAST FALLBACK: use standard chunked writer (less overhead than very small chunks)
         if (!ok) {
           Log.w(TAG, "Enhanced write failed, attempting standard chunked write");
           ok = writeDataInChunks(message);
@@ -1413,13 +1487,20 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
           return;
         }
 
-        // STEP 4: Short finalize to ensure printer prints buffer
-        finalizePrinterOutput(); // short waits inside helper
+        // Short finalize to prompt printing; rely on helper for minimal waits
+        try {
+          finalizePrinterOutput();
+        } catch (Exception e) {
+          Log.w(TAG, "finalizePrinterOutput failed: " + e.getMessage());
+        }
 
-        // Small post-final delay (reduced)
-        Thread.sleep(120);
+        // Small post-final delay
+        try {
+          Thread.sleep(100);
+        } catch (InterruptedException ignored) {}
 
         Log.d(TAG, "WriteBytesReliable (fast) completed: " + totalBytes + " bytes");
+         printedSinceConnect = true;
         result.success(true);
       } catch (Exception ex) {
         Log.e(TAG, "WriteBytesReliable (fast) failed: " + ex.getMessage(), ex);
