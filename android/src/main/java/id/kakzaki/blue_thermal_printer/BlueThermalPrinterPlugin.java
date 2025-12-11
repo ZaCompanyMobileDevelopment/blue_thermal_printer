@@ -730,7 +730,11 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
       result.error("write_error", ex.getMessage(), exceptionToString(ex));
     }
   }
-    private void  defaultWriteBytes(Result result, byte[] message) {
+    // Chunk size for defaultWriteBytes - smaller chunks prevent printer buffer overflow
+    private static final int DEFAULT_WRITE_CHUNK_SIZE = 1024;
+    private static final int DEFAULT_WRITE_CHUNK_DELAY_MS = 20; // Delay between chunks to let printer process
+
+    private void defaultWriteBytes(Result result, byte[] message) {
       Log.d(TAG,"defaultWriteBytes......."+message.length);
 
     if (THREAD == null) {
@@ -738,25 +742,51 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
       return;
     }
 
-    try {
-                  // first-print quick wake if needed
-     if (!printedSinceConnect) {
-        try {
-         byte[] wakeAndFeed = {0x00, 0x1B, 0x40, 0x0A};
-         synchronized (THREAD.outputStream) {
-           THREAD.outputStream.write(wakeAndFeed);
+    AsyncTask.execute(() -> {
+      try {
+        // First-print quick wake if needed
+        if (!printedSinceConnect) {
+          try {
+            byte[] wakeAndFeed = {0x00, 0x1B, 0x40, 0x0A};
+            synchronized (THREAD.outputStream) {
+              THREAD.outputStream.write(wakeAndFeed);
+              THREAD.outputStream.flush();
+            }
+            Thread.sleep(FIRST_PRINT_WAKE_DELAY_MS);
+          } catch (Exception ignored) {}
+        }
+
+        // Write data in chunks to prevent printer buffer overflow
+        int offset = 0;
+        int totalLength = message.length;
+        Log.d(TAG, "defaultWriteBytes chunked write: " + totalLength + " bytes in " + DEFAULT_WRITE_CHUNK_SIZE + " byte chunks");
+
+        while (offset < totalLength) {
+          int chunkSize = Math.min(DEFAULT_WRITE_CHUNK_SIZE, totalLength - offset);
+          byte[] chunk = new byte[chunkSize];
+          System.arraycopy(message, offset, chunk, 0, chunkSize);
+
+          synchronized (THREAD.outputStream) {
+            THREAD.outputStream.write(chunk);
             THREAD.outputStream.flush();
           }
-          Thread.sleep(FIRST_PRINT_WAKE_DELAY_MS);
-       } catch (Exception ignored) {}
-   }
-      THREAD.write(message);
-      printedSinceConnect = true;
-      result.success(true);
-    } catch (Exception ex) {
-      Log.e(TAG, ex.getMessage(), ex);
-      result.error("write_error", ex.getMessage(), exceptionToString(ex));
-    }
+
+          offset += chunkSize;
+
+          // Small delay between chunks to let printer process data
+          if (offset < totalLength) {
+            Thread.sleep(DEFAULT_WRITE_CHUNK_DELAY_MS);
+          }
+        }
+
+        Log.d(TAG, "defaultWriteBytes completed successfully");
+        printedSinceConnect = true;
+        result.success(true);
+      } catch (Exception ex) {
+        Log.e(TAG, ex.getMessage(), ex);
+        result.error("write_error", ex.getMessage(), exceptionToString(ex));
+      }
+    });
   }
 
   private void writeBytes(Result result, byte[] message) {
