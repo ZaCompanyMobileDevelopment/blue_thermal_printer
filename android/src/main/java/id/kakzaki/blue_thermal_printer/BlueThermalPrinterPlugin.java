@@ -760,6 +760,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
       String errorMessage = "";
       
       for (int attempt = 1; attempt <= FAST_MAX_RETRY_ATTEMPTS; attempt++) {
+        Log.d(TAG, "writeBytes..." + attempt + "/"+ FAST_MAX_RETRY_ATTEMPTS +  message.length );
         try {
           Log.d(TAG, "FastWriteBytes attempt " + attempt + "/" + FAST_MAX_RETRY_ATTEMPTS + ", data length: " + message.length);
           
@@ -775,6 +776,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
           
           // Write data in large chunks for maximum speed
           success = writeDataInChunksFast(message);
+          Log.d (TAG,"writeBytes...success"+ success);
           
           if (success) {
             Log.d(TAG, "FastWriteBytes successful on attempt " + attempt);
@@ -2032,7 +2034,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
       int totalBytes = data.length;
       int bytesWritten = 0;
       
-      Log.d(TAG, "Starting fast chunked write for " + totalBytes + " bytes");
+      Log.d(TAG, "Starting fast chunked write for " + totalBytes + " bytes" + bytesWritten + "fast chunk size " + FAST_CHUNK_SIZE);
       
       // For small data, write directly without chunking
       if (totalBytes <= FAST_CHUNK_SIZE) {
@@ -2040,8 +2042,11 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
       }
       
       while (bytesWritten < totalBytes) {
+        Log.d(TAG, "while... ");
         int chunkSize = Math.min(FAST_CHUNK_SIZE, totalBytes - bytesWritten);
+         Log.d(TAG, "while... "+chunkSize);
         byte[] chunk = new byte[chunkSize];
+          Log.d(TAG, "while... "+chunk);
         System.arraycopy(data, bytesWritten, chunk, 0, chunkSize);
         
         if (!THREAD.writeWithValidationUltraFast(chunk)) {
@@ -2055,7 +2060,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
         if (bytesWritten < totalBytes) {
           Thread.sleep(FAST_CHUNK_DELAY_MS);
         }
-        
+         Log.d(TAG, "while...bytesWritten "+bytesWritten);
         // Log progress less frequently
         if (bytesWritten % (FAST_CHUNK_SIZE * 2) == 0 || bytesWritten == totalBytes) {
           Log.d(TAG, "Fast write progress: " + bytesWritten + "/" + totalBytes + " bytes");
@@ -2607,6 +2612,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
     }
     
     public boolean writeWithValidationUltraFast(byte[] bytes) {
+      Log.d(TAG,"writeWithValidationUltraFast....." + bytes );
       if (bytes == null || bytes.length == 0) {
         return false;
       }
