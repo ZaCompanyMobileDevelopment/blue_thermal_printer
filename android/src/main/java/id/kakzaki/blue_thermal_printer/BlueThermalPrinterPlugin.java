@@ -731,8 +731,8 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
     }
   }
     // Chunk size for defaultWriteBytes - smaller chunks prevent printer buffer overflow
-    private static final int DEFAULT_WRITE_CHUNK_SIZE = 1024;
-    private static final int DEFAULT_WRITE_CHUNK_DELAY_MS = 20; // Delay between chunks to let printer process
+    private static final int DEFAULT_WRITE_CHUNK_SIZE = 512;  // Smaller chunks for reliability
+    private static final int DEFAULT_WRITE_CHUNK_DELAY_MS = 50; // 50ms delay between chunks for thermal printer processing
 
     private void defaultWriteBytes(Result result, byte[] message) {
       Log.d(TAG,"defaultWriteBytes......."+message.length);
@@ -744,7 +744,20 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
 
     AsyncTask.execute(() -> {
       try {
-        // First-print quick wake if needed
+        // ALWAYS initialize printer before writing data
+        // This ensures printer is ready even if clearBuffer() was called before
+        byte[] initSequence = {
+          0x1B, 0x40,       // ESC @ - Initialize printer
+          0x1B, 0x21, 0x00, // ESC ! 0 - Reset font
+          0x1B, 0x61, 0x00, // ESC a 0 - Left align
+        };
+        synchronized (THREAD.outputStream) {
+          THREAD.outputStream.write(initSequence);
+          THREAD.outputStream.flush();
+        }
+        Thread.sleep(100); // Wait for printer to be ready
+
+        // First-print wake if needed (extra delay for cold printer)
         if (!printedSinceConnect) {
           try {
             byte[] wakeAndFeed = {0x00, 0x1B, 0x40, 0x0A};
@@ -759,7 +772,8 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
         // Write data in chunks to prevent printer buffer overflow
         int offset = 0;
         int totalLength = message.length;
-        Log.d(TAG, "defaultWriteBytes chunked write: " + totalLength + " bytes in " + DEFAULT_WRITE_CHUNK_SIZE + " byte chunks");
+        int chunkCount = (totalLength + DEFAULT_WRITE_CHUNK_SIZE - 1) / DEFAULT_WRITE_CHUNK_SIZE;
+        Log.d(TAG, "defaultWriteBytes chunked write: " + totalLength + " bytes in " + chunkCount + " chunks of " + DEFAULT_WRITE_CHUNK_SIZE + " bytes");
 
         while (offset < totalLength) {
           int chunkSize = Math.min(DEFAULT_WRITE_CHUNK_SIZE, totalLength - offset);
@@ -773,13 +787,13 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
 
           offset += chunkSize;
 
-          // Small delay between chunks to let printer process data
+          // Delay between chunks to let printer process data (critical for thermal printers)
           if (offset < totalLength) {
             Thread.sleep(DEFAULT_WRITE_CHUNK_DELAY_MS);
           }
         }
 
-        Log.d(TAG, "defaultWriteBytes completed successfully");
+        Log.d(TAG, "defaultWriteBytes completed successfully: " + totalLength + " bytes sent");
         printedSinceConnect = true;
         result.success(true);
       } catch (Exception ex) {
