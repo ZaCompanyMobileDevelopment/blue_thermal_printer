@@ -81,7 +81,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
   private static final int FAST_CHUNK_DELAY_MS = 15; // Minimal chunk delay
   private static final int FAST_INIT_DELAY_MS = 30; // Quick initialization
   private boolean printedSinceConnect = false; // mark whether any successful print happened since the last connect
-  private static final int FIRST_PRINT_WAKE_DELAY_MS = 120; // small delay used only for first-print quick wake/pre-feed (tune if needed)
+  private static final int FIRST_PRINT_WAKE_DELAY_MS = 500; // delay for first-print wake - sufficient for cold printer after power-on
   
   private static ConnectedThread THREAD = null;
   private BluetoothAdapter mBluetoothAdapter;
@@ -635,14 +635,43 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
           THREAD = new ConnectedThread(socket);
           THREAD.start();
           printedSinceConnect = false;// Reset printed flag for new connection
-        // Best-effort quick pre-feed to clear sleep/residual state (non-blocking / best-effort)
+
+        // ROBUST PRINTER WARM-UP at connection time
+        // This ensures the printer is fully ready before first print
         try {
-         byte[] quickPreFeed = {0x00, 0x0A}; // NUL + LF
-        synchronized (THREAD.outputStream) {
-           THREAD.outputStream.write(quickPreFeed);
-           THREAD.outputStream.flush();
-         }
-       } catch (Exception ignored) {}
+          // Step 1: Wake signal - multiple NULs to wake from deep sleep
+          byte[] wakeSignal = {0x00, 0x00, 0x00};
+          synchronized (THREAD.outputStream) {
+            THREAD.outputStream.write(wakeSignal);
+            THREAD.outputStream.flush();
+          }
+          Thread.sleep(100); // Brief pause after wake signal
+
+          // Step 2: Full initialization sequence
+          byte[] initSequence = {
+            0x1B, 0x40,       // ESC @ - Initialize/reset printer
+            0x1B, 0x3D, 0x01, // ESC = 1 - Select printer (online mode)
+            0x1B, 0x21, 0x00, // ESC ! 0 - Reset character font
+            0x1B, 0x61, 0x00, // ESC a 0 - Left alignment
+          };
+          synchronized (THREAD.outputStream) {
+            THREAD.outputStream.write(initSequence);
+            THREAD.outputStream.flush();
+          }
+          Thread.sleep(300); // Allow printer to fully initialize after power-on
+
+          // Step 3: Confirm printer ready with second init
+          byte[] confirmReady = {0x1B, 0x40}; // ESC @ again
+          synchronized (THREAD.outputStream) {
+            THREAD.outputStream.write(confirmReady);
+            THREAD.outputStream.flush();
+          }
+          Thread.sleep(100);
+
+          Log.d(TAG, "Printer warm-up completed during connect");
+        } catch (Exception e) {
+          Log.w(TAG, "Printer warm-up during connect failed (non-fatal): " + e.getMessage());
+        }
 
           result.success(true);
         } catch (Exception ex) {
