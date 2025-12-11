@@ -483,6 +483,15 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
         }
         break;
 
+      case "writeBytesFirstPrint":
+        if (arguments.containsKey("message")) {
+          byte[] message = (byte[]) arguments.get("message");
+          writeBytesFirstPrint(result, message);
+        } else {
+          result.error("invalid_argument", "argument 'message' not found", null);
+        }
+        break;
+
       case "printReceiptGP1324D":
         if (arguments.containsKey("content")) {
           String content = (String) arguments.get("content");
@@ -1596,6 +1605,137 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
       } catch (Exception ex) {
         Log.e(TAG, "WriteBytesReliable (fast) failed: " + ex.getMessage(), ex);
         result.error("write_error", "Print failed: " + ex.getMessage(), null);
+      }
+    });
+  }
+
+  /**
+   * writeBytesFirstPrint() - USE THIS FOR FIRST PRINT AFTER BLUETOOTH CONNECT
+   *
+   * This function solves the white/blank paper issue when:
+   * 1. Printer is powered on
+   * 2. Bluetooth connects
+   * 3. First receipt prints as white paper
+   *
+   * Features:
+   * - Full printer warm-up sequence (1 second)
+   * - Multiple wake signals to ensure printer is ready
+   * - Proper initialization before sending data
+   * - Small chunk size (256 bytes) with longer delays (80ms)
+   * - Guaranteed printer readiness before data transmission
+   *
+   * Usage in Flutter:
+   *   await printer.writeBytesFirstPrint(receiptData);
+   */
+  private void writeBytesFirstPrint(Result result, byte[] message) {
+    Log.d(TAG, "writeBytesFirstPrint starting... data length: " + message.length);
+
+    if (THREAD == null) {
+      result.error("write_error", "not connected", null);
+      return;
+    }
+
+    if (message == null || message.length == 0) {
+      result.error("write_error", "message is null or empty", null);
+      return;
+    }
+
+    AsyncTask.execute(() -> {
+      try {
+        Log.d(TAG, "=== FIRST PRINT SEQUENCE START ===");
+
+        // STEP 1: Send wake signals (multiple times to ensure printer wakes from deep sleep)
+        Log.d(TAG, "Step 1: Sending wake signals...");
+        for (int i = 0; i < 3; i++) {
+          byte[] wakeSignal = {0x00, 0x00, 0x00}; // NUL bytes wake the printer
+          synchronized (THREAD.outputStream) {
+            THREAD.outputStream.write(wakeSignal);
+            THREAD.outputStream.flush();
+          }
+          Thread.sleep(100);
+        }
+        Log.d(TAG, "Wake signals sent");
+
+        // STEP 2: Wait for printer to fully wake up (critical for cold printer)
+        Log.d(TAG, "Step 2: Waiting for printer warm-up...");
+        Thread.sleep(500);
+
+        // STEP 3: Initialize printer with full sequence
+        Log.d(TAG, "Step 3: Initializing printer...");
+        byte[] fullInitSequence = {
+          0x1B, 0x40,       // ESC @ - Initialize/reset printer
+          0x1B, 0x3D, 0x01, // ESC = 1 - Select printer (online mode)
+          0x1B, 0x21, 0x00, // ESC ! 0 - Reset character font
+          0x1B, 0x61, 0x00, // ESC a 0 - Left alignment
+          0x1B, 0x4D, 0x00, // ESC M 0 - Standard character font
+        };
+        synchronized (THREAD.outputStream) {
+          THREAD.outputStream.write(fullInitSequence);
+          THREAD.outputStream.flush();
+        }
+        Thread.sleep(200);
+        Log.d(TAG, "Printer initialized");
+
+        // STEP 4: Send second init to confirm printer is ready
+        Log.d(TAG, "Step 4: Confirming printer ready...");
+        byte[] confirmReady = {
+          0x1B, 0x40,       // ESC @ - Initialize again
+          0x0A,             // LF - Line feed to confirm communication
+        };
+        synchronized (THREAD.outputStream) {
+          THREAD.outputStream.write(confirmReady);
+          THREAD.outputStream.flush();
+        }
+        Thread.sleep(200);
+        Log.d(TAG, "Printer confirmed ready");
+
+        // STEP 5: Write data in small chunks with longer delays
+        Log.d(TAG, "Step 5: Sending print data...");
+        int chunkSize = 256;  // Small chunks for first print reliability
+        int chunkDelay = 80;  // 80ms delay between chunks
+        int offset = 0;
+        int totalLength = message.length;
+        int chunkCount = (totalLength + chunkSize - 1) / chunkSize;
+
+        Log.d(TAG, "Sending " + totalLength + " bytes in " + chunkCount + " chunks");
+
+        while (offset < totalLength) {
+          int currentChunkSize = Math.min(chunkSize, totalLength - offset);
+          byte[] chunk = new byte[currentChunkSize];
+          System.arraycopy(message, offset, chunk, 0, currentChunkSize);
+
+          synchronized (THREAD.outputStream) {
+            THREAD.outputStream.write(chunk);
+            THREAD.outputStream.flush();
+          }
+
+          offset += currentChunkSize;
+
+          // Delay between chunks
+          if (offset < totalLength) {
+            Thread.sleep(chunkDelay);
+          }
+        }
+
+        // STEP 6: Finalize print
+        Log.d(TAG, "Step 6: Finalizing print...");
+        byte[] finalize = {
+          0x0A, 0x0A,       // Two line feeds
+        };
+        synchronized (THREAD.outputStream) {
+          THREAD.outputStream.write(finalize);
+          THREAD.outputStream.flush();
+        }
+        Thread.sleep(100);
+
+        Log.d(TAG, "=== FIRST PRINT SEQUENCE COMPLETE ===");
+        Log.d(TAG, "writeBytesFirstPrint SUCCESS: " + totalLength + " bytes sent");
+        printedSinceConnect = true;
+        result.success(true);
+
+      } catch (Exception ex) {
+        Log.e(TAG, "writeBytesFirstPrint FAILED: " + ex.getMessage(), ex);
+        result.error("write_error", "First print failed: " + ex.getMessage(), null);
       }
     });
   }
