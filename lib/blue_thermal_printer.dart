@@ -172,6 +172,33 @@ class BlueThermalPrinter {
   /// Note: Slower but guarantees all data is printed without cut-off
   Future<dynamic> writeBytesReliable(Uint8List message) =>
       _channel.invokeMethod('writeBytesReliable', {'message': message});
+
+  /// writeBytesFirstPrint() - USE THIS FOR FIRST PRINT AFTER BLUETOOTH CONNECT
+  ///
+  /// This function solves the white/blank paper issue when:
+  /// 1. Printer is powered on
+  /// 2. Bluetooth connects
+  /// 3. First receipt prints as white paper
+  ///
+  /// Features:
+  /// - Full printer warm-up sequence (~1 second)
+  /// - Multiple wake signals to ensure printer is ready
+  /// - Proper initialization before sending data
+  /// - Small chunk size (256 bytes) with longer delays (80ms)
+  ///
+  /// Usage:
+  /// ```dart
+  /// // After connecting to printer
+  /// await printer.connect(device);
+  ///
+  /// // Use this for first print to avoid blank paper
+  /// await printer.writeBytesFirstPrint(receiptData);
+  ///
+  /// // For subsequent prints, you can use regular writeBytes
+  /// await printer.writeBytes(receiptData);
+  /// ```
+  Future<dynamic> writeBytesFirstPrint(Uint8List message) =>
+      _channel.invokeMethod('writeBytesFirstPrint', {'message': message});
 }
 
 class BluetoothDevice {
