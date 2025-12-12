@@ -199,6 +199,9 @@ class BlueThermalPrinter {
   /// ```
   Future<dynamic> writeBytesFirstPrint(Uint8List message) =>
       _channel.invokeMethod('writeBytesFirstPrint', {'message': message});
+
+  Future<dynamic> writeBytesReceipt(Uint8List message) =>
+      _channel.invokeMethod('writeBytesReceipt', {'message': message});
 }
 
 class BluetoothDevice {
