@@ -482,6 +482,14 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
           result.error("invalid_argument", "argument 'message' not found", null);
         }
         break;
+      case "writeBytesReceipt"  :
+          if (arguments.containsKey("message")) {
+          byte[] message = (byte[]) arguments.get("message");
+          writeBytesReceipt(result, message);
+        } else {
+          result.error("invalid_argument", "argument 'message' not found", null);
+        }
+        break;
 
       case "printReceiptGP1324D":
         if (arguments.containsKey("content")) {
@@ -723,6 +731,20 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
    }
       THREAD.write(message);
       printedSinceConnect = true;
+      result.success(true);
+    } catch (Exception ex) {
+      Log.e(TAG, ex.getMessage(), ex);
+      result.error("write_error", ex.getMessage(), exceptionToString(ex));
+    }
+  }
+   private void writeBytesReceipt(Result result, byte[] message) {
+    if (THREAD == null) {
+      result.error("write_error", "not connected", null);
+      return;
+    }
+
+    try {
+      THREAD.write(message);
       result.success(true);
     } catch (Exception ex) {
       Log.e(TAG, ex.getMessage(), ex);
