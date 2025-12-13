@@ -56,6 +56,11 @@ import com.journeyapps.barcodescanner.BarcodeEncoder;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.Typeface;
+
 
 public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,MethodCallHandler, RequestPermissionsResultListener {
 
@@ -704,145 +709,167 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
   //     }
   //   });
   // }
-  private void connect(Result result, String address) {
-  Log.d(TAG, "connect.......");
 
-  if (THREAD != null) {
-    result.error("connect_error", "already connected", null);
-    return;
-  }
 
-  AsyncTask.execute(() -> {
-    try {
-      BluetoothDevice device = mBluetoothAdapter.getRemoteDevice(address);
-      if (device == null) {
-        result.error("connect_error", "device not found", null);
+
+private void connect(Result result, String address) {
+    Log.d(TAG, "connect...");
+
+    if (THREAD != null) {
+        result.error("connect_error", "already connected", null);
         return;
-      }
-
-      BluetoothSocket socket =
-          device.createRfcommSocketToServiceRecord(MY_UUID);
-      if (socket == null) {
-        result.error("connect_error", "socket connection not established", null);
-        return;
-      }
-
-      mBluetoothAdapter.cancelDiscovery();
-
-      try {
-        socket.connect();
-        THREAD = new ConnectedThread(socket);
-        THREAD.start();
-        printedSinceConnect = false;
-
-        // ================= PRINTER WARM-UP =================
-        try {
-          byte[] wakeSignal = {0x00, 0x00, 0x00};
-          synchronized (THREAD.outputStream) {
-            THREAD.outputStream.write(wakeSignal);
-            THREAD.outputStream.flush();
-          }
-          Thread.sleep(100);
-
-          byte[] initSequence = {
-              0x1B, 0x40,
-              0x1B, 0x3D, 0x01,
-              0x1B, 0x21, 0x00,
-              0x1B, 0x61, 0x00
-          };
-          synchronized (THREAD.outputStream) {
-            THREAD.outputStream.write(initSequence);
-            THREAD.outputStream.flush();
-          }
-          Thread.sleep(300);
-
-          byte[] confirmReady = {0x1B, 0x40};
-          synchronized (THREAD.outputStream) {
-            THREAD.outputStream.write(confirmReady);
-            THREAD.outputStream.flush();
-          }
-          Thread.sleep(100);
-
-        } catch (Exception e) {
-          Log.w(TAG, "Printer warm-up failed: " + e.getMessage());
-        }
-
-        // ================= AUTO PRINT RECEIPT (UNICODE) =================
-        try {
-          synchronized (THREAD.outputStream) {
-
-            // INIT
-            THREAD.outputStream.write(new byte[]{0x1B, 0x40});
-
-            // CENTER + BOLD
-            THREAD.outputStream.write(new byte[]{0x1B, 0x61, 0x01}); // center
-            THREAD.outputStream.write(new byte[]{0x1B, 0x45, 0x01}); // bold on
-
-            THREAD.outputStream.write(
-                "Za Information Technology Co., Ltd\n".getBytes("UTF-8")
-            );
-
-            // BOLD OFF
-            THREAD.outputStream.write(new byte[]{0x1B, 0x45, 0x00});
-
-            // DATE / TIME
-            SimpleDateFormat sdf =
-                new SimpleDateFormat("yyyy-MM-dd  HH:mm:ss", Locale.getDefault());
-            String dateTime = sdf.format(new Date()) + "\n";
-            THREAD.outputStream.write(dateTime.getBytes("UTF-8"));
-
-            // LEFT ALIGN
-            THREAD.outputStream.write(new byte[]{0x1B, 0x61, 0x00});
-
-            // BODY TEXT (UNICODE)
-            String bodyText =
-                "------------------------------\n" +
-                "ဤစာရွက်သည် စနစ်အလုပ်လုပ်မှုကို\n" +
-                "စစ်ဆေးရန်အတွက် Printer မှ\n" +
-                "စမ်းသပ်ထုတ်ယူထားသော စာရွက်ဖြစ်ပါသည်။\n" +
-                "ထုတ်ယူမှုအတွင်း အမှားအယွင်းမရှိစေရန်\n" +
-                "စမ်းသပ်ခြင်းအနေဖြင့် ထုတ်ယူထားခြင်း\n" +
-                "ဖြစ်ကြောင်း အသိပေးအပ်ပါသည်။\n" +
-                "------------------------------\n" +
-                "Za Information Technology Co., Ltd သည်\n" +
-                "ယုံကြည်စိတ်ချရသော IT နည်းပညာများဖြင့်\n" +
-                "စီးပွားရေးလုပ်ငန်းများကို\n" +
-                "တိုးတက်အောင်မြင်စေရန်\n" +
-                "အမြဲတမ်း ပံ့ပိုးကူညီလျက်ရှိပါသည်။\n" +
-                "------------------------------\n" +
-                "------------------------------\n" +
-                "------------------------------\n" +
-                "------------------------------\n" +
-                "------------------------------\n" +
-                "Powered by ZA IT Team\n";
-
-            THREAD.outputStream.write(bodyText.getBytes("UTF-8"));
-
-            // FEED + CUT
-            THREAD.outputStream.write(new byte[]{0x1B, 0x64, 0x03});
-            THREAD.outputStream.write(new byte[]{0x1D, 0x56, 0x41, 0x00});
-
-            THREAD.outputStream.flush();
-          }
-
-          Log.d(TAG, "Unicode test receipt printed");
-
-        } catch (Exception e) {
-          Log.e(TAG, "Unicode print failed", e);
-        }
-
-        result.success(true);
-
-      } catch (Exception ex) {
-        Log.e(TAG, ex.getMessage(), ex);
-        result.error("connect_error", ex.getMessage(), exceptionToString(ex));
-      }
-
-    } catch (Exception ex) {
-      Log.e(TAG, ex.getMessage(), ex);
-      result.error("connect_error", ex.getMessage(), exceptionToString(ex));
     }
-  });
+
+    AsyncTask.execute(() -> {
+        try {
+            BluetoothDevice device = mBluetoothAdapter.getRemoteDevice(address);
+            if (device == null) {
+                result.error("connect_error", "device not found", null);
+                return;
+            }
+
+            // ===== Detect printer width at runtime =====
+            int paperWidthPx = 576; // default 80mm
+            String printerName = device.getName();
+            if (printerName != null) {
+                if (printerName.toLowerCase().contains("52")) {
+                    paperWidthPx = 384; // 52mm printer
+                } else if (printerName.toLowerCase().contains("80")) {
+                    paperWidthPx = 576; // 80mm printer
+                }
+            }
+
+            BluetoothSocket socket = device.createRfcommSocketToServiceRecord(MY_UUID);
+            if (socket == null) {
+                result.error("connect_error", "socket not established", null);
+                return;
+            }
+
+            mBluetoothAdapter.cancelDiscovery();
+
+            try {
+                socket.connect();
+                THREAD = new ConnectedThread(socket);
+                THREAD.start();
+                printedSinceConnect = false;
+
+                // ===== PRINTER WARM-UP =====
+                byte[] init = {0x1B, 0x40};
+                synchronized (THREAD.outputStream) {
+                    THREAD.outputStream.write(init);
+                    THREAD.outputStream.flush();
+                }
+                Thread.sleep(200);
+
+                // ===== COMPANY NAME (CENTER + BOLD) =====
+                synchronized (THREAD.outputStream) {
+                    THREAD.outputStream.write(new byte[]{0x1B, 0x61, 0x01}); // center
+                    THREAD.outputStream.write(new byte[]{0x1B, 0x45, 0x01}); // bold on
+                    THREAD.outputStream.write("Za Information Technology Co., Ltd\n".getBytes("UTF-8"));
+                    THREAD.outputStream.write(new byte[]{0x1B, 0x45, 0x00}); // bold off
+                    THREAD.outputStream.write(new byte[]{0x1B, 0x61, 0x00}); // left align
+                }
+
+                // ===== DATE / TIME =====
+                SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd  HH:mm:ss", Locale.getDefault());
+                String dateTime = "Date/Time: " + sdf.format(new Date()) + "\n";
+                synchronized (THREAD.outputStream) {
+                    THREAD.outputStream.write(dateTime.getBytes("UTF-8"));
+                }
+
+                // ===== ENGLISH TEXT (Updated phrasing) =====
+                String englishText =
+                        "******** PRINTER TEST ********\n" +
+                        "This receipt is printed for printer testing.\n" +
+                        "Verify that text, spacing, and formatting appear correctly.\n" +
+                        "We provide reliable IT solutions to help businesses succeed.\n" +
+                        "Thank you for using our services.\n" +
+                        "------------------------------\n";
+                synchronized (THREAD.outputStream) {
+                    THREAD.outputStream.write(englishText.getBytes("UTF-8"));
+                }
+
+                // ===== PRINTER INFO SECTION =====
+                String printerInfoText =
+                        "Printer Name: " + printerName + "\n" +
+                        "Printer Model: " + "Model XYZ" + "\n" +
+                        "Status: Connected\n" +
+                        "------------------------------\n";
+                synchronized (THREAD.outputStream) {
+                    THREAD.outputStream.write(printerInfoText.getBytes("UTF-8"));
+                }
+
+                // ===== MYANMAR TEXT (Bitmap / Unicode safe) =====
+                String myanmarText =
+                        "------------------------------\n" +
+                        "ဤစာရွက်သည် စနစ်အလုပ်လုပ်မှုကို\n" +
+                        "စစ်ဆေးရန်အတွက် Printer မှ\n" +
+                        "စမ်းသပ်ထုတ်ယူထားသော စာရွက်ဖြစ်ပါသည်။\n" +
+                        "ထုတ်ယူမှုအတွင်း အမှားအယွင်းမရှိစေရန်\n" +
+                        "စမ်းသပ်ခြင်းအနေဖြင့် ထုတ်ယူထားခြင်း\n" +
+                        "ဖြစ်ကြောင်း အသိပေးအပ်ပါသည်။\n" +
+                        "------------------------------\n" +
+                        "Za Information Technology Co., Ltd သည်\n" +
+                        "ယုံကြည်စိတ်ချရသော IT နည်းပညာများဖြင့်\n" +
+                        "စီးပွားရေးလုပ်ငန်းများကို\n" +
+                        "တိုးတက်အောင်မြင်စေရန်\n" +
+                        "အမြဲတမ်း ပံ့ပိုးကူညီလျက်ရှိပါသည်။\n" +
+                        "------------------------------\n" +
+                        "Powered by ZA IT Team\n";
+
+                Bitmap bmp = createBitmapFromText(myanmarText, paperWidthPx);
+                byte[] bmpBytes = convertBitmapToEscPosBytes(bmp);
+
+                synchronized (THREAD.outputStream) {
+                    THREAD.outputStream.write(bmpBytes);
+                    // Feed 3 lines + cut
+                    THREAD.outputStream.write(new byte[]{0x1B, 0x64, 0x03});
+                    THREAD.outputStream.write(new byte[]{0x1D, 0x56, 0x41, 0x00});
+                    THREAD.outputStream.flush();
+                }
+
+                result.success(true);
+                Log.d(TAG, "Hybrid receipt printed successfully");
+
+            } catch (Exception ex) {
+                Log.e(TAG, "connect/print error", ex);
+                result.error("connect_error", ex.getMessage(), exceptionToString(ex));
+            }
+
+        } catch (Exception ex) {
+            Log.e(TAG, "connect error", ex);
+            result.error("connect_error", ex.getMessage(), exceptionToString(ex));
+        }
+    });
+}
+
+// ================= HELPER METHODS =================
+private Bitmap createBitmapFromText(String text, int widthPx) {
+    Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    paint.setTextSize(24);
+    paint.setColor(android.graphics.Color.BLACK);
+    paint.setTypeface(Typeface.MONOSPACE);
+
+    int lineHeight = (int)(paint.getTextSize() * 1.2);
+    String[] lines = text.split("\n");
+    int heightPx = lineHeight * lines.length;
+
+    Bitmap bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888);
+    Canvas canvas = new Canvas(bitmap);
+    canvas.drawColor(android.graphics.Color.WHITE);
+
+    int y = lineHeight;
+    for (String line : lines) {
+        canvas.drawText(line, 0, y, paint);
+        y += lineHeight;
+    }
+
+    return bitmap;
+}
+
+private byte[] convertBitmapToEscPosBytes(Bitmap bmp) {
+    // TODO: implement bitmap → raster ESC/POS bytes conversion
+    return new byte[0]; // placeholder
 }
 
 
