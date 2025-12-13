@@ -621,86 +621,227 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
    * @param result  result
    * @param address address
    */
+  // private void connect(Result result, String address) {
+  //    Log.d(TAG,"connect.......");
+
+  //   if (THREAD != null) {
+  //     result.error("connect_error", "already connected", null);
+  //     return;
+  //   }
+  //   AsyncTask.execute(() -> {
+  //     try {
+  //       BluetoothDevice device = mBluetoothAdapter.getRemoteDevice(address);
+
+  //       if (device == null) {
+  //         result.error("connect_error", "device not found", null);
+  //         return;
+  //       }
+
+  //       BluetoothSocket socket = device.createRfcommSocketToServiceRecord(MY_UUID);
+
+  //       if (socket == null) {
+  //         result.error("connect_error", "socket connection not established", null);
+  //         return;
+  //       }
+
+  //       // Cancel bt discovery, even though we didn't start it
+  //       mBluetoothAdapter.cancelDiscovery();
+
+  //       try {
+  //         socket.connect();
+  //         THREAD = new ConnectedThread(socket);
+  //         THREAD.start();
+  //         printedSinceConnect = false;// Reset printed flag for new connection
+
+  //       // ROBUST PRINTER WARM-UP at connection time
+  //       // This ensures the printer is fully ready before first print
+  //       try {
+  //         // Step 1: Wake signal - multiple NULs to wake from deep sleep
+  //         byte[] wakeSignal = {0x00, 0x00, 0x00};
+  //         synchronized (THREAD.outputStream) {
+  //           THREAD.outputStream.write(wakeSignal);
+  //           THREAD.outputStream.flush();
+  //         }
+  //         Thread.sleep(100); // Brief pause after wake signal
+
+  //         // Step 2: Full initialization sequence
+  //         byte[] initSequence = {
+  //           0x1B, 0x40,       // ESC @ - Initialize/reset printer
+  //           0x1B, 0x3D, 0x01, // ESC = 1 - Select printer (online mode)
+  //           0x1B, 0x21, 0x00, // ESC ! 0 - Reset character font
+  //           0x1B, 0x61, 0x00, // ESC a 0 - Left alignment
+  //         };
+  //         synchronized (THREAD.outputStream) {
+  //           THREAD.outputStream.write(initSequence);
+  //           THREAD.outputStream.flush();
+  //         }
+  //         Thread.sleep(300); // Allow printer to fully initialize after power-on
+
+  //         // Step 3: Confirm printer ready with second init
+  //         byte[] confirmReady = {0x1B, 0x40}; // ESC @ again
+  //         synchronized (THREAD.outputStream) {
+  //           THREAD.outputStream.write(confirmReady);
+  //           THREAD.outputStream.flush();
+  //         }
+  //         Thread.sleep(100);
+
+  //         Log.d(TAG, "Printer warm-up completed during connect");
+  //       } catch (Exception e) {
+  //         Log.w(TAG, "Printer warm-up during connect failed (non-fatal): " + e.getMessage());
+  //       }
+
+  //         result.success(true);
+  //       } catch (Exception ex) {
+  //         Log.e(TAG, ex.getMessage(), ex);
+  //         result.error("connect_error", ex.getMessage(), exceptionToString(ex));
+  //       }
+  //     } catch (Exception ex) {
+  //       Log.e(TAG, ex.getMessage(), ex);
+  //       result.error("connect_error", ex.getMessage(), exceptionToString(ex));
+  //     }
+  //   });
+  // }
   private void connect(Result result, String address) {
-     Log.d(TAG,"connect.......");
+  Log.d(TAG, "connect.......");
 
-    if (THREAD != null) {
-      result.error("connect_error", "already connected", null);
-      return;
-    }
-    AsyncTask.execute(() -> {
+  if (THREAD != null) {
+    result.error("connect_error", "already connected", null);
+    return;
+  }
+
+  AsyncTask.execute(() -> {
+    try {
+      BluetoothDevice device = mBluetoothAdapter.getRemoteDevice(address);
+      if (device == null) {
+        result.error("connect_error", "device not found", null);
+        return;
+      }
+
+      BluetoothSocket socket =
+          device.createRfcommSocketToServiceRecord(MY_UUID);
+      if (socket == null) {
+        result.error("connect_error", "socket connection not established", null);
+        return;
+      }
+
+      mBluetoothAdapter.cancelDiscovery();
+
       try {
-        BluetoothDevice device = mBluetoothAdapter.getRemoteDevice(address);
+        socket.connect();
+        THREAD = new ConnectedThread(socket);
+        THREAD.start();
+        printedSinceConnect = false;
 
-        if (device == null) {
-          result.error("connect_error", "device not found", null);
-          return;
-        }
-
-        BluetoothSocket socket = device.createRfcommSocketToServiceRecord(MY_UUID);
-
-        if (socket == null) {
-          result.error("connect_error", "socket connection not established", null);
-          return;
-        }
-
-        // Cancel bt discovery, even though we didn't start it
-        mBluetoothAdapter.cancelDiscovery();
-
+        // ================= PRINTER WARM-UP =================
         try {
-          socket.connect();
-          THREAD = new ConnectedThread(socket);
-          THREAD.start();
-          printedSinceConnect = false;// Reset printed flag for new connection
-
-        // ROBUST PRINTER WARM-UP at connection time
-        // This ensures the printer is fully ready before first print
-        try {
-          // Step 1: Wake signal - multiple NULs to wake from deep sleep
           byte[] wakeSignal = {0x00, 0x00, 0x00};
           synchronized (THREAD.outputStream) {
             THREAD.outputStream.write(wakeSignal);
             THREAD.outputStream.flush();
           }
-          Thread.sleep(100); // Brief pause after wake signal
+          Thread.sleep(100);
 
-          // Step 2: Full initialization sequence
           byte[] initSequence = {
-            0x1B, 0x40,       // ESC @ - Initialize/reset printer
-            0x1B, 0x3D, 0x01, // ESC = 1 - Select printer (online mode)
-            0x1B, 0x21, 0x00, // ESC ! 0 - Reset character font
-            0x1B, 0x61, 0x00, // ESC a 0 - Left alignment
+              0x1B, 0x40,
+              0x1B, 0x3D, 0x01,
+              0x1B, 0x21, 0x00,
+              0x1B, 0x61, 0x00
           };
           synchronized (THREAD.outputStream) {
             THREAD.outputStream.write(initSequence);
             THREAD.outputStream.flush();
           }
-          Thread.sleep(300); // Allow printer to fully initialize after power-on
+          Thread.sleep(300);
 
-          // Step 3: Confirm printer ready with second init
-          byte[] confirmReady = {0x1B, 0x40}; // ESC @ again
+          byte[] confirmReady = {0x1B, 0x40};
           synchronized (THREAD.outputStream) {
             THREAD.outputStream.write(confirmReady);
             THREAD.outputStream.flush();
           }
           Thread.sleep(100);
 
-          Log.d(TAG, "Printer warm-up completed during connect");
         } catch (Exception e) {
-          Log.w(TAG, "Printer warm-up during connect failed (non-fatal): " + e.getMessage());
+          Log.w(TAG, "Printer warm-up failed: " + e.getMessage());
         }
 
-          result.success(true);
-        } catch (Exception ex) {
-          Log.e(TAG, ex.getMessage(), ex);
-          result.error("connect_error", ex.getMessage(), exceptionToString(ex));
+        // ================= AUTO PRINT RECEIPT (UNICODE) =================
+        try {
+          synchronized (THREAD.outputStream) {
+
+            // INIT
+            THREAD.outputStream.write(new byte[]{0x1B, 0x40});
+
+            // CENTER + BOLD
+            THREAD.outputStream.write(new byte[]{0x1B, 0x61, 0x01}); // center
+            THREAD.outputStream.write(new byte[]{0x1B, 0x45, 0x01}); // bold on
+
+            THREAD.outputStream.write(
+                "Za Information Technology Co., Ltd\n".getBytes("UTF-8")
+            );
+
+            // BOLD OFF
+            THREAD.outputStream.write(new byte[]{0x1B, 0x45, 0x00});
+
+            // DATE / TIME
+            SimpleDateFormat sdf =
+                new SimpleDateFormat("yyyy-MM-dd  HH:mm:ss", Locale.getDefault());
+            String dateTime = sdf.format(new Date()) + "\n";
+            THREAD.outputStream.write(dateTime.getBytes("UTF-8"));
+
+            // LEFT ALIGN
+            THREAD.outputStream.write(new byte[]{0x1B, 0x61, 0x00});
+
+            // BODY TEXT (UNICODE)
+            String bodyText =
+                "------------------------------\n" +
+                "ဤစာရွက်သည် စနစ်အလုပ်လုပ်မှုကို\n" +
+                "စစ်ဆေးရန်အတွက် Printer မှ\n" +
+                "စမ်းသပ်ထုတ်ယူထားသော စာရွက်ဖြစ်ပါသည်။\n" +
+                "ထုတ်ယူမှုအတွင်း အမှားအယွင်းမရှိစေရန်\n" +
+                "စမ်းသပ်ခြင်းအနေဖြင့် ထုတ်ယူထားခြင်း\n" +
+                "ဖြစ်ကြောင်း အသိပေးအပ်ပါသည်။\n" +
+                "------------------------------\n" +
+                "Za Information Technology Co., Ltd သည်\n" +
+                "ယုံကြည်စိတ်ချရသော IT နည်းပညာများဖြင့်\n" +
+                "စီးပွားရေးလုပ်ငန်းများကို\n" +
+                "တိုးတက်အောင်မြင်စေရန်\n" +
+                "အမြဲတမ်း ပံ့ပိုးကူညီလျက်ရှိပါသည်။\n" +
+                "------------------------------\n" +
+                "------------------------------\n" +
+                "------------------------------\n" +
+                "------------------------------\n" +
+                "------------------------------\n" +
+                "Powered by ZA IT Team\n";
+
+            THREAD.outputStream.write(bodyText.getBytes("UTF-8"));
+
+            // FEED + CUT
+            THREAD.outputStream.write(new byte[]{0x1B, 0x64, 0x03});
+            THREAD.outputStream.write(new byte[]{0x1D, 0x56, 0x41, 0x00});
+
+            THREAD.outputStream.flush();
+          }
+
+          Log.d(TAG, "Unicode test receipt printed");
+
+        } catch (Exception e) {
+          Log.e(TAG, "Unicode print failed", e);
         }
+
+        result.success(true);
+
       } catch (Exception ex) {
         Log.e(TAG, ex.getMessage(), ex);
         result.error("connect_error", ex.getMessage(), exceptionToString(ex));
       }
-    });
-  }
+
+    } catch (Exception ex) {
+      Log.e(TAG, ex.getMessage(), ex);
+      result.error("connect_error", ex.getMessage(), exceptionToString(ex));
+    }
+  });
+}
+
 
   /**
    * @param result result
