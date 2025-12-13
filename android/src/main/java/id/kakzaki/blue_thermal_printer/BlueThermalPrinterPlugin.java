@@ -728,15 +728,11 @@ private void connect(Result result, String address) {
                 return;
             }
 
-            // ===== Detect printer width at runtime =====
+            // ===== Detect printer width =====
             int paperWidthPx = 576; // default 80mm
             String printerName = device.getName();
-            if (printerName != null) {
-                if (printerName.toLowerCase().contains("52")) {
-                    paperWidthPx = 384; // 52mm printer
-                } else if (printerName.toLowerCase().contains("80")) {
-                    paperWidthPx = 576; // 80mm printer
-                }
+            if (printerName != null && printerName.toLowerCase().contains("52")) {
+                paperWidthPx = 384; // 52mm
             }
 
             BluetoothSocket socket = device.createRfcommSocketToServiceRecord(MY_UUID);
@@ -746,102 +742,102 @@ private void connect(Result result, String address) {
             }
 
             mBluetoothAdapter.cancelDiscovery();
+            socket.connect();
 
-            try {
-                socket.connect();
-                THREAD = new ConnectedThread(socket);
-                THREAD.start();
-                printedSinceConnect = false;
+            THREAD = new ConnectedThread(socket);
+            THREAD.start();
+            printedSinceConnect = false;
 
-                // ===== PRINTER WARM-UP =====
-                byte[] init = {0x1B, 0x40};
-                synchronized (THREAD.outputStream) {
-                    THREAD.outputStream.write(init);
-                    THREAD.outputStream.flush();
-                }
-                Thread.sleep(200);
+            // ===== PRINTER WARM-UP =====
+            synchronized (THREAD.outputStream) {
+                THREAD.outputStream.write(new byte[]{0x1B, 0x40}); // ESC @ reset
+                THREAD.outputStream.flush();
+            }
+            Thread.sleep(200);
 
-                // ===== COMPANY NAME (CENTER + BOLD) =====
-                synchronized (THREAD.outputStream) {
-                    THREAD.outputStream.write(new byte[]{0x1B, 0x61, 0x01}); // center
-                    THREAD.outputStream.write(new byte[]{0x1B, 0x45, 0x01}); // bold on
-                    THREAD.outputStream.write("Za Information Technology Co., Ltd\n".getBytes("UTF-8"));
-                    THREAD.outputStream.write(new byte[]{0x1B, 0x45, 0x00}); // bold off
-                    THREAD.outputStream.write(new byte[]{0x1B, 0x61, 0x00}); // left align
-                }
-
-                // ===== DATE / TIME =====
-                SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd  HH:mm:ss", Locale.getDefault());
-                String dateTime = "Date/Time: " + sdf.format(new Date()) + "\n";
-                synchronized (THREAD.outputStream) {
-                    THREAD.outputStream.write(dateTime.getBytes("UTF-8"));
-                }
-
-                // ===== ENGLISH TEXT (Updated phrasing) =====
-                String englishText =
-                        "******** PRINTER TEST ********\n" +
-                        "This receipt is printed for printer testing.\n" +
-                        "Verify that text, spacing, and formatting appear correctly.\n" +
-                        "We provide reliable IT solutions to help businesses succeed.\n" +
-                        "Thank you for using our services.\n" +
-                        "------------------------------\n";
-                synchronized (THREAD.outputStream) {
-                    THREAD.outputStream.write(englishText.getBytes("UTF-8"));
-                }
-
-                // ===== PRINTER INFO SECTION =====
-                String printerInfoText =
-                        "Printer Name: " + printerName + "\n" +
-                        "Printer Model: " + "Model XYZ" + "\n" +
-                        "Status: Connected\n" +
-                        "------------------------------\n";
-                synchronized (THREAD.outputStream) {
-                    THREAD.outputStream.write(printerInfoText.getBytes("UTF-8"));
-                }
-
-                // ===== MYANMAR TEXT (Bitmap / Unicode safe) =====
-                String myanmarText =
-                        "------------------------------\n" +
-                        "ဤစာရွက်သည် စနစ်အလုပ်လုပ်မှုကို\n" +
-                        "စစ်ဆေးရန်အတွက် Printer မှ\n" +
-                        "စမ်းသပ်ထုတ်ယူထားသော စာရွက်ဖြစ်ပါသည်။\n" +
-                        "ထုတ်ယူမှုအတွင်း အမှားအယွင်းမရှိစေရန်\n" +
-                        "စမ်းသပ်ခြင်းအနေဖြင့် ထုတ်ယူထားခြင်း\n" +
-                        "ဖြစ်ကြောင်း အသိပေးအပ်ပါသည်။\n" +
-                        "------------------------------\n" +
-                        "Za Information Technology Co., Ltd သည်\n" +
-                        "ယုံကြည်စိတ်ချရသော IT နည်းပညာများဖြင့်\n" +
-                        "စီးပွားရေးလုပ်ငန်းများကို\n" +
-                        "တိုးတက်အောင်မြင်စေရန်\n" +
-                        "အမြဲတမ်း ပံ့ပိုးကူညီလျက်ရှိပါသည်။\n" +
-                        "------------------------------\n" +
-                        "Powered by ZA IT Team\n";
-
-                Bitmap bmp = createBitmapFromText(myanmarText, paperWidthPx);
-                byte[] bmpBytes = convertBitmapToEscPosBytes(bmp);
-
-                synchronized (THREAD.outputStream) {
-                    THREAD.outputStream.write(bmpBytes);
-                    // Feed 3 lines + cut
-                    THREAD.outputStream.write(new byte[]{0x1B, 0x64, 0x03});
-                    THREAD.outputStream.write(new byte[]{0x1D, 0x56, 0x41, 0x00});
-                    THREAD.outputStream.flush();
-                }
-
-                result.success(true);
-                Log.d(TAG, "Hybrid receipt printed successfully");
-
-            } catch (Exception ex) {
-                Log.e(TAG, "connect/print error", ex);
-                result.error("connect_error", ex.getMessage(), exceptionToString(ex));
+            // ===== COMPANY NAME CENTER + BOLD =====
+            synchronized (THREAD.outputStream) {
+                THREAD.outputStream.write(new byte[]{0x1B, 0x61, 0x01}); // center
+                THREAD.outputStream.write(new byte[]{0x1B, 0x45, 0x01}); // bold on
+                THREAD.outputStream.write("Za Information Technology Co., Ltd\n".getBytes("UTF-8"));
+                THREAD.outputStream.write(new byte[]{0x1B, 0x45, 0x00}); // bold off
+                THREAD.outputStream.write(new byte[]{0x1B, 0x61, 0x00}); // left align
             }
 
+            // ===== DATE / TIME =====
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd  HH:mm:ss", Locale.getDefault());
+            String dateTime = "Date/Time: " + sdf.format(new Date()) + "\n";
+            synchronized (THREAD.outputStream) {
+                THREAD.outputStream.write(dateTime.getBytes("UTF-8"));
+            }
+
+            // ===== ENGLISH TEXT =====
+            String englishText =
+                    "******** PRINTER TEST ********\n" +
+                    "This receipt has been printed for testing purposes.\n" +
+                    "It verifies the printer operation and ensures that\n" +
+                    "text, spacing, and formatting appear correctly.\n" +
+                    "Please note that this printout is for testing only,\n" +
+                    "and any discrepancies should be reported accordingly.\n" +
+                    "------------------------------\n" +
+                    "Za Information Technology Co., Ltd provides reliable\n" +
+                    "IT solutions to help businesses grow and succeed.\n" +
+                    "We remain committed to supporting our clients.\n" +
+                    "------------------------------\n" +
+                    "Powered by ZA IT Team\n";
+            synchronized (THREAD.outputStream) {
+                THREAD.outputStream.write(englishText.getBytes("UTF-8"));
+            }
+
+            // ===== PRINTER INFO SECTION =====
+            String printerInfoText =
+                    "Printer Name: " + printerName + "\n" +
+                    "Printer Model: " + "Model XYZ" + "\n" +
+                    "Status: Connected\n" +
+                    "------------------------------\n";
+            synchronized (THREAD.outputStream) {
+                THREAD.outputStream.write(printerInfoText.getBytes("UTF-8"));
+            }
+
+            // ===== MYANMAR TEXT (Bitmap) =====
+            String myanmarText =
+                    "------------------------------\n" +
+                    "ဤစာရွက်သည် စနစ်အလုပ်လုပ်မှုကို\n" +
+                    "စစ်ဆေးရန်အတွက် Printer မှ\n" +
+                    "စမ်းသပ်ထုတ်ယူထားသော စာရွက်ဖြစ်ပါသည်။\n" +
+                    "ထုတ်ယူမှုအတွင်း အမှားအယွင်းမရှိစေရန်\n" +
+                    "စမ်းသပ်ခြင်းအနေဖြင့် ထုတ်ယူထားခြင်း\n" +
+                    "ဖြစ်ကြောင်း အသိပေးအပ်ပါသည်။\n" +
+                    "------------------------------\n" +
+                    "Za Information Technology Co., Ltd သည်\n" +
+                    "ယုံကြည်စိတ်ချရသော IT နည်းပညာများဖြင့်\n" +
+                    "စီးပွားရေးလုပ်ငန်းများကို\n" +
+                    "တိုးတက်အောင်မြင်စေရန်\n" +
+                    "အမြဲတမ်း ပံ့ပိုးကူညီလျက်ရှိပါသည်။\n" +
+                    "------------------------------\n" +
+                    "Powered by ZA IT Team\n";
+
+            // Bitmap bmp = createBitmapFromText(myanmarText, paperWidthPx);
+            // byte[] bmpBytes = convertBitmapToEscPosBytes(bmp);
+
+            synchronized (THREAD.outputStream) {
+                //THREAD.outputStream.write(bmpBytes);
+                THREAD.outputStream.write(new byte[]{0x1B, 0x64, 0x03}); // feed 3 lines
+                THREAD.outputStream.write(new byte[]{0x1D, 0x56, 0x41, 0x00}); // cut
+                THREAD.outputStream.flush();
+            }
+
+            printedSinceConnect = true;
+            result.success(true);
+            Log.d(TAG, "Hybrid receipt printed successfully");
+
         } catch (Exception ex) {
-            Log.e(TAG, "connect error", ex);
+            Log.e(TAG, "connect/print error", ex);
             result.error("connect_error", ex.getMessage(), exceptionToString(ex));
         }
     });
 }
+
 
 // ================= HELPER METHODS =================
 private Bitmap createBitmapFromText(String text, int widthPx) {
@@ -1005,82 +1001,129 @@ private byte[] convertBitmapToEscPosBytes(Bitmap bmp) {
     }
   }
 
-  private void writeBytes(Result result, byte[] message) {
-      Log.d(TAG,"writeBytes......."+message.length);
+  // private void writeBytes(Result result, byte[] message) {
+  //     Log.d(TAG,"writeBytes......."+message.length);
 
+
+  //   if (THREAD == null) {
+  //     result.error("write_error", "not connected", null);
+  //     return;
+  //   }
+
+  //   if (message == null || message.length == 0) {
+  //     result.error("write_error", "message is null or empty", null);
+  //     return;
+  //   }
+
+  //   AsyncTask.execute(() -> {
+  //          // first-print quick wake if needed
+  //    if (!printedSinceConnect) {
+  //      try {
+  //        byte[] wakeAndFeed = {0x00, 0x1B, 0x40, 0x0A};
+  //        synchronized (THREAD.outputStream) {
+  //          THREAD.outputStream.write(wakeAndFeed);
+  //          THREAD.outputStream.flush();
+  //        }
+  //      Thread.sleep(FIRST_PRINT_WAKE_DELAY_MS);
+  //     } catch (Exception ignored) {}
+  //   }
+  //     boolean success = false;
+  //     String errorMessage = "";
+      
+  //     for (int attempt = 1; attempt <= FAST_MAX_RETRY_ATTEMPTS; attempt++) {
+  //       Log.d(TAG, "writeBytes..." + attempt + "/"+ FAST_MAX_RETRY_ATTEMPTS +  message.length );
+  //       try {
+  //         Log.d(TAG, "FastWriteBytes attempt " + attempt + "/" + FAST_MAX_RETRY_ATTEMPTS + ", data length: " + message.length);
+          
+  //         // Quick connection check
+  //         if (!isConnectionHealthyFast()) {
+  //           throw new IOException("Connection is not healthy");
+  //         }
+          
+  //         // Minimal printer initialization for speed
+  //         if (!initializePrinterFast()) {
+  //           throw new IOException("Fast printer initialization failed");
+  //         }
+          
+  //         // Write data in large chunks for maximum speed
+  //         success = writeDataInChunksFast(message);
+  //         Log.d (TAG,"writeBytes...success"+ success);
+          
+  //         if (success) {
+  //           Log.d(TAG, "FastWriteBytes successful on attempt " + attempt);
+  //            printedSinceConnect = true;
+  //           result.success(true);
+  //           return;
+  //         }
+          
+  //       } catch (Exception ex) {
+  //         errorMessage = ex.getMessage();
+  //         Log.e(TAG, "FastWriteBytes attempt " + attempt + " failed: " + errorMessage, ex);
+          
+  //         // Minimal delay between retries for speed
+  //         if (attempt < FAST_MAX_RETRY_ATTEMPTS) {
+  //           try {
+  //             Thread.sleep(FAST_WRITE_DELAY_MS2 * attempt);
+  //           } catch (InterruptedException ie) {
+  //             Thread.currentThread().interrupt();
+  //             break;
+  //           }
+  //         }
+  //       }
+  //     }
+      
+  //     // All attempts failed
+  //     Log.e(TAG, "FastWriteBytes failed after " + FAST_MAX_RETRY_ATTEMPTS + " attempts");
+  //     result.error("write_error", "Fast write failed after " + FAST_MAX_RETRY_ATTEMPTS + " attempts: " + errorMessage, null);
+  //   });
+  // }
+
+  private void writeBytes(Result result, byte[] message) {
+    Log.d(TAG, "writeBytes... len=" + message.length);
 
     if (THREAD == null) {
-      result.error("write_error", "not connected", null);
-      return;
-    }
-
-    if (message == null || message.length == 0) {
-      result.error("write_error", "message is null or empty", null);
-      return;
+        result.error("write_error", "not connected", null);
+        return;
     }
 
     AsyncTask.execute(() -> {
-           // first-print quick wake if needed
-     if (!printedSinceConnect) {
-       try {
-         byte[] wakeAndFeed = {0x00, 0x1B, 0x40, 0x0A};
-         synchronized (THREAD.outputStream) {
-           THREAD.outputStream.write(wakeAndFeed);
-           THREAD.outputStream.flush();
-         }
-       Thread.sleep(FIRST_PRINT_WAKE_DELAY_MS);
-      } catch (Exception ignored) {}
-    }
-      boolean success = false;
-      String errorMessage = "";
-      
-      for (int attempt = 1; attempt <= FAST_MAX_RETRY_ATTEMPTS; attempt++) {
-        Log.d(TAG, "writeBytes..." + attempt + "/"+ FAST_MAX_RETRY_ATTEMPTS +  message.length );
         try {
-          Log.d(TAG, "FastWriteBytes attempt " + attempt + "/" + FAST_MAX_RETRY_ATTEMPTS + ", data length: " + message.length);
-          
-          // Quick connection check
-          if (!isConnectionHealthyFast()) {
-            throw new IOException("Connection is not healthy");
-          }
-          
-          // Minimal printer initialization for speed
-          if (!initializePrinterFast()) {
-            throw new IOException("Fast printer initialization failed");
-          }
-          
-          // Write data in large chunks for maximum speed
-          success = writeDataInChunksFast(message);
-          Log.d (TAG,"writeBytes...success"+ success);
-          
-          if (success) {
-            Log.d(TAG, "FastWriteBytes successful on attempt " + attempt);
-             printedSinceConnect = true;
-            result.success(true);
-            return;
-          }
-          
-        } catch (Exception ex) {
-          errorMessage = ex.getMessage();
-          Log.e(TAG, "FastWriteBytes attempt " + attempt + " failed: " + errorMessage, ex);
-          
-          // Minimal delay between retries for speed
-          if (attempt < FAST_MAX_RETRY_ATTEMPTS) {
-            try {
-              Thread.sleep(FAST_WRITE_DELAY_MS2 * attempt);
-            } catch (InterruptedException ie) {
-              Thread.currentThread().interrupt();
-              break;
+            // ===== FIRST PRINT WAKE (NO LINE FEED) =====
+            if (!printedSinceConnect) {
+                synchronized (THREAD.outputStream) {
+                    THREAD.outputStream.write(new byte[]{
+                        0x00, 0x00,   // wake
+                        0x1B, 0x40    // ESC @ reset
+                    });
+                    THREAD.outputStream.flush();
+                }
+                Thread.sleep(200);
             }
-          }
+
+            // ===== PRINT ACTUAL RECEIPT =====
+            synchronized (THREAD.outputStream) {
+                THREAD.outputStream.write(message);
+                THREAD.outputStream.flush();
+            }
+
+            // ===== FEED + CUT =====
+            synchronized (THREAD.outputStream) {
+                THREAD.outputStream.write(new byte[]{0x1B, 0x64, 0x03}); // feed 3
+                THREAD.outputStream.write(new byte[]{0x1D, 0x56, 0x41, 0x00}); // cut
+                THREAD.outputStream.flush();
+            }
+
+            printedSinceConnect = true;
+            result.success(true);
+            Log.d(TAG, "Receipt printed successfully");
+
+        } catch (Exception e) {
+            Log.e(TAG, "writeBytes error", e);
+            result.error("write_error", e.getMessage(), null);
         }
-      }
-      
-      // All attempts failed
-      Log.e(TAG, "FastWriteBytes failed after " + FAST_MAX_RETRY_ATTEMPTS + " attempts");
-      result.error("write_error", "Fast write failed after " + FAST_MAX_RETRY_ATTEMPTS + " attempts: " + errorMessage, null);
     });
-  }
+}
+
 
   private void writeBytesNoFeed(Result result, byte[] message) {
     Log.d(TAG,"writeBytesNoFeed......."+message.length);
