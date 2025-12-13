@@ -2989,7 +2989,7 @@ private byte[] convertBitmapToEscPosBytes(Bitmap bmp) {
           outputStream.flush();
           
           // Very short delay for fast transmission
-         /// Thread.sleep(FAST_WRITE_DELAY_MS); // 25ms delay
+          Thread.sleep(0); // 25ms delay
           
           return true;
         }
