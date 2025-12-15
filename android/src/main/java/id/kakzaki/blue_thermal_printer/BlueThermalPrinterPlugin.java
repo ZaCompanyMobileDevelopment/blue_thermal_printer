@@ -1277,6 +1277,7 @@ private byte[] convertBitmapToEscPosBytes(Bitmap bmp) {
       
       // For small data, use fast write without chunking
       if (totalBytes <= CHUNK_SIZE) {
+         Log.d(TAG,"writeDataInChunks.......totalBytes <= CHUNK_SIZE");
         return THREAD.writeWithValidationFast(data);
       }
       
@@ -1284,8 +1285,9 @@ private byte[] convertBitmapToEscPosBytes(Bitmap bmp) {
         int chunkSize = Math.min(CHUNK_SIZE, totalBytes - bytesWritten);
         byte[] chunk = new byte[chunkSize];
         System.arraycopy(data, bytesWritten, chunk, 0, chunkSize);
-        
+         Log.d(TAG,"writeDataInChunks.......bytesWritten < totalBytes. ");
         if (!THREAD.writeWithValidationFast(chunk)) {
+
           Log.e(TAG, "Failed to write chunk at offset " + bytesWritten);
           return false;
         }
