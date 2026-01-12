@@ -1655,7 +1655,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
       byte[] finalizeSequence = {
         0x0A,             // LF - Line feed
         0x0A,             // LF - Another line feed for spacing
-        0x1B, 0x64, 0x03  // ESC d n - Feed 3 lines for proper spacing
+        0x1B, 0x64, 0x00  // ESC d n - Feed 3 lines for proper spacing
       };
 
       synchronized (THREAD.outputStream) {
@@ -1976,7 +1976,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
 
   private void printCustom(Result result, String message, int size, int align, String charset) {
     // Print config "mode"
-    byte[] cc = new byte[] { 0x1B, 0x21, 0x03 }; // 0- normal size text
+    byte[] cc = new byte[] { 0x1B, 0x21, 0x00 }; // 0- normal size text
     // byte[] cc1 = new byte[]{0x1B,0x21,0x00}; // 0- normal size text
     byte[] bb = new byte[] { 0x1B, 0x21, 0x08 }; // 1- only bold text
     byte[] bb2 = new byte[] { 0x1B, 0x21, 0x20 }; // 2- bold with medium text
@@ -2037,7 +2037,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
   }
 
   private void printLeftRight(Result result, String msg1, String msg2, int size ,String charset,String format) {
-    byte[] cc = new byte[] { 0x1B, 0x21, 0x03 }; // 0- normal size text
+    byte[] cc = new byte[] { 0x1B, 0x21, 0x00 }; // 0- normal size text
     // byte[] cc1 = new byte[]{0x1B,0x21,0x00}; // 0- normal size text
     byte[] bb = new byte[] { 0x1B, 0x21, 0x08 }; // 1- only bold text
     byte[] bb2 = new byte[] { 0x1B, 0x21, 0x20 }; // 2- bold with medium text
@@ -2084,7 +2084,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
   }
 
   private void print3Column(Result result, String msg1, String msg2, String msg3, int size ,String charset, String format) {
-    byte[] cc = new byte[] { 0x1B, 0x21, 0x03 }; // 0- normal size text
+    byte[] cc = new byte[] { 0x1B, 0x21, 0x00 }; // 0- normal size text
     // byte[] cc1 = new byte[]{0x1B,0x21,0x00}; // 0- normal size text
     byte[] bb = new byte[] { 0x1B, 0x21, 0x08 }; // 1- only bold text
     byte[] bb2 = new byte[] { 0x1B, 0x21, 0x20 }; // 2- bold with medium text
@@ -2131,7 +2131,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
   }
 
   private void print4Column(Result result, String msg1, String msg2,String msg3,String msg4, int size, String charset, String format) {
-    byte[] cc = new byte[] { 0x1B, 0x21, 0x03 }; // 0- normal size text
+    byte[] cc = new byte[] { 0x1B, 0x21, 0x00 }; // 0- normal size text
     // byte[] cc1 = new byte[]{0x1B,0x21,0x00}; // 0- normal size text
     byte[] bb = new byte[] { 0x1B, 0x21, 0x08 }; // 1- only bold text
     byte[] bb2 = new byte[] { 0x1B, 0x21, 0x20 }; // 2- bold with medium text
