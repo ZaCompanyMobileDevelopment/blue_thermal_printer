@@ -728,7 +728,9 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
           }
           
           // Write data in large chunks for maximum speed
-          success = writeDataInChunksFast(message);
+          // success = writeDataInChunksFast(message);
+          THREAD.write(message.getBytes());
+          Log.d(TAG, "Data written in FastWriteBytes attempt " + attempt);
           
           if (success) {
             Log.d(TAG, "FastWriteBytes successful on attempt " + attempt);
