@@ -1186,8 +1186,8 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
 
         // Step 1: Wake up printer first
         byte[] wakeUpSequence = {
-          0x00,             // NUL - Wake signal
-          0x00,             // NUL - Wake signal
+          // 0x00,             // NUL - Wake signal
+          // 0x00,             // NUL - Wake signal
           0x1B, 0x40,       // ESC @ - Initialize printer
           0x1B, 0x3D, 0x01, // ESC = 1 - Select printer (online)
         };
