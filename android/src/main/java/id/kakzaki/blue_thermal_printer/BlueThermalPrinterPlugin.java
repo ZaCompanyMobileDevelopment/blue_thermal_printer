@@ -1776,7 +1776,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
           fontSizeCmd = new byte[]{0x1B, 0x21, 0x08}; // ESC ! 8 - Emphasized
           break;
         case 2: // Large
-          fontSizeCmd = new byte[]{0x1B, 0x21, 0x30}; // ESC ! 48 - Double height/width
+          fontSizeCmd = new byte[]{0x1B, 0x21, 0x00}; // ESC ! 48 - Double height/width
           break;
         default:
           fontSizeCmd = new byte[]{0x1B, 0x21, 0x08}; // Default to normal
@@ -1981,7 +1981,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
     byte[] bb = new byte[] { 0x1B, 0x21, 0x08 }; // 1- only bold text
     byte[] bb2 = new byte[] { 0x1B, 0x21, 0x20 }; // 2- bold with medium text
     byte[] bb3 = new byte[] { 0x1B, 0x21, 0x10 }; // 3- bold with large text
-    byte[] bb4 = new byte[] { 0x1B, 0x21, 0x30 }; // 4- strong text
+    byte[] bb4 = new byte[] { 0x1B, 0x21, 0x00 }; // 4- strong text
     byte[] bb5 = new byte[] { 0x1B, 0x21, 0x50 }; // 5- extra strong text
     if (THREAD == null) {
       result.error("write_error", "not connected", null);
@@ -2042,7 +2042,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
     byte[] bb = new byte[] { 0x1B, 0x21, 0x08 }; // 1- only bold text
     byte[] bb2 = new byte[] { 0x1B, 0x21, 0x20 }; // 2- bold with medium text
     byte[] bb3 = new byte[] { 0x1B, 0x21, 0x10 }; // 3- bold with large text
-    byte[] bb4 = new byte[] { 0x1B, 0x21, 0x30 }; // 4- strong text
+    byte[] bb4 = new byte[] { 0x1B, 0x21, 0x00 }; // 4- strong text
     if (THREAD == null) {
       result.error("write_error", "not connected", null);
       return;
@@ -2089,7 +2089,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
     byte[] bb = new byte[] { 0x1B, 0x21, 0x08 }; // 1- only bold text
     byte[] bb2 = new byte[] { 0x1B, 0x21, 0x20 }; // 2- bold with medium text
     byte[] bb3 = new byte[] { 0x1B, 0x21, 0x10 }; // 3- bold with large text
-    byte[] bb4 = new byte[] { 0x1B, 0x21, 0x30 }; // 4- strong text
+    byte[] bb4 = new byte[] { 0x1B, 0x21, 0x00 }; // 4- strong text
     if (THREAD == null) {
       result.error("write_error", "not connected", null);
       return;
@@ -2136,7 +2136,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
     byte[] bb = new byte[] { 0x1B, 0x21, 0x08 }; // 1- only bold text
     byte[] bb2 = new byte[] { 0x1B, 0x21, 0x20 }; // 2- bold with medium text
     byte[] bb3 = new byte[] { 0x1B, 0x21, 0x10 }; // 3- bold with large text
-    byte[] bb4 = new byte[] { 0x1B, 0x21, 0x30 }; // 4- strong text
+    byte[] bb4 = new byte[] { 0x1B, 0x21, 0x00 }; // 4- strong text
     if (THREAD == null) {
       result.error("write_error", "not connected", null);
       return;
