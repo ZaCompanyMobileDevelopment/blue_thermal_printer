@@ -944,7 +944,7 @@ private byte[] convertBitmapToEscPosBytes(Bitmap bmp) {
         // First-print wake if needed (extra delay for cold printer)
         if (!printedSinceConnect) {
           try {
-            byte[] wakeAndFeed = {0x00, 0x1B, 0x40, 0x0A};
+            byte[] wakeAndFeed = {0x1B, 0x40, 0x0A};
             synchronized (THREAD.outputStream) {
               THREAD.outputStream.write(wakeAndFeed);
               THREAD.outputStream.flush();
@@ -1019,7 +1019,7 @@ private byte[] convertBitmapToEscPosBytes(Bitmap bmp) {
   //          // first-print quick wake if needed
   //    if (!printedSinceConnect) {
   //      try {
-  //        byte[] wakeAndFeed = {0x00, 0x1B, 0x40, 0x0A};
+  //        byte[] wakeAndFeed = {0x1B, 0x40, 0x0A};
   //        synchronized (THREAD.outputStream) {
   //          THREAD.outputStream.write(wakeAndFeed);
   //          THREAD.outputStream.flush();
@@ -1092,7 +1092,6 @@ private byte[] convertBitmapToEscPosBytes(Bitmap bmp) {
             if (!printedSinceConnect) {
                 synchronized (THREAD.outputStream) {
                     THREAD.outputStream.write(new byte[]{
-                        0x00, 0x00,   // wake
                         0x1B, 0x40    // ESC @ reset
                     });
                     THREAD.outputStream.flush();
@@ -1771,7 +1770,7 @@ private byte[] convertBitmapToEscPosBytes(Bitmap bmp) {
            // Quick first-print wake/pre-feed when needed (keeps this method fast)
    if (!printedSinceConnect) {
      try {
-       byte[] wakeAndFeed = {0x00, 0x1B, 0x40, 0x0A}; // NUL, ESC @, LF
+       byte[] wakeAndFeed = {0x1B, 0x40, 0x0A}; // ESC @, LF
        synchronized (THREAD.outputStream) {
          THREAD.outputStream.write(wakeAndFeed);
          THREAD.outputStream.flush();
@@ -1784,7 +1783,7 @@ private byte[] convertBitmapToEscPosBytes(Bitmap bmp) {
 
         // FAST WAKE + SHORT PRE-FEED (one shot)
         try {
-          byte[] wakeAndFeed = {0x00, 0x1B, 0x40, 0x0A}; // NUL, ESC @, LF
+          byte[] wakeAndFeed = {0x1B, 0x40, 0x0A}; // ESC @, LF
           synchronized (THREAD.outputStream) {
             THREAD.outputStream.write(wakeAndFeed);
             THREAD.outputStream.flush();
