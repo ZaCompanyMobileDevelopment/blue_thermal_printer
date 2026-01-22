@@ -2347,12 +2347,16 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
       }
     }
 
-    public void write(byte[] bytes) {
+    /**
+     * Write bytes to the Bluetooth output stream
+     * @throws IOException if write fails (e.g., broken pipe when printer is off)
+     */
+    public void write(byte[] bytes) throws IOException {
       try {
         synchronized (outputStream) {
           outputStream.write(bytes);
           outputStream.flush();
-          
+
           // Moderate delay for reliable writing after power cycle
           try {
             Thread.sleep(30); // Increased for better reliability
@@ -2362,7 +2366,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
         }
       } catch (IOException e) {
         Log.e(TAG, "Write failed: " + e.getMessage(), e);
-        // Attempt to reconnect if write fails
+        // Attempt to clean up if write fails
         try {
           if (mmSocket != null && !mmSocket.isConnected()) {
             cancel();
@@ -2371,6 +2375,8 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
         } catch (Exception ex) {
           Log.e(TAG, "Error checking connection: " + ex.getMessage(), ex);
         }
+        // Rethrow so caller can handle the error
+        throw e;
       }
     }
     
